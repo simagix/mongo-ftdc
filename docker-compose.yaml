@@ -1,0 +1,18 @@
+# Copyright 2019 Kuei-chun Chen. All rights reserved.
+version: "3"
+
+services:
+  grafana-ftdc:
+    image: simagix/grafana-ftdc:1.0
+    hostname: grafana-ftdc
+    ports:
+      - "3030:3000"
+    environment:
+      GF_INSTALL_PLUGINS: grafana-simple-json-datasource
+
+  ftdc:
+    image: simagix/keyhole:v1.1.4
+    hostname: ftdc
+    volumes:
+      - ./diagnostic.data:/diagnostic.data
+    command: /keyhole --web --diag /diagnostic.data
