@@ -1,5 +1,5 @@
-FROM grafana/grafana
+FROM alpine
 MAINTAINER Ken Chen <ken.chen@simagix.com>
-ADD conf/analytics_mini.json /var/lib/grafana/dashboards/
-ADD conf/ftdc-dashboards.yaml /etc/grafana/provisioning/dashboards/ftdc.yaml
-ADD conf/ftdc-datasources.yaml /etc/grafana/provisioning/datasources/ftdc.yaml
+ADD ftdc-linux-x64 /simple_json
+RUN mkdir /diagnostic.data
+CMD ["/simple_json", "/diagnostic.data"]

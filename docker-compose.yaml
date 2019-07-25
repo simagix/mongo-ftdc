@@ -11,8 +11,8 @@ services:
       GF_INSTALL_PLUGINS: grafana-simple-json-datasource
 
   ftdc:
-    image: simagix/keyhole:v1.1.4
+    image: simagix/ftdc:1.0
     hostname: ftdc
     volumes:
       - ./diagnostic.data:/diagnostic.data
-    command: /keyhole --web --diag /diagnostic.data
+    command: /simple_json /diagnostic.data

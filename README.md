@@ -1,6 +1,13 @@
 # MongoDB FTDC Metrics and Charts
 A dockerized tool to view MongoDB FTDC metrics.
 
+## Build
+Use `build.sh` to build *simagix/ftdc* and *simagix/grafana-ftdc* Docker images.
+
+```
+./build.sh
+```
+
 ## Startup
 Create a `diagnostic.data` directory if it doesn't exist yet:
 
