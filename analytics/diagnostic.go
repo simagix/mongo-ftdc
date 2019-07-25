@@ -112,6 +112,20 @@ func (d *DiagnosticData) DecodeDiagnosticData(filenames []string) error {
 	return nil
 }
 
+// PrintDiagnosticData prints diagnostic data of MongoD
+func (d *DiagnosticData) PrintDiagnosticData(filenames []string) (string, error) {
+	if err := d.DecodeDiagnosticData(filenames); err != nil {
+		return "", err
+	}
+	strs := []string{}
+	if d.ServerInfo != nil {
+		b, _ := json.MarshalIndent(d.ServerInfo, "", "  ")
+		strs = append(strs, string(b))
+	}
+	strs = append(strs, PrintAllStats(d.ServerStatusList, -1))
+	return strings.Join(strs, "\n"), nil
+}
+
 // readDiagnosticDir reads diagnotics.data from a directory
 func (d *DiagnosticData) readDiagnosticDir(dirname string) error {
 	var err error
