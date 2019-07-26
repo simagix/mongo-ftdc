@@ -4,11 +4,15 @@ package analytics
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,17 +29,41 @@ type Metrics struct {
 
 // NewMetrics returns &Metrics
 func NewMetrics(filenames []string) *Metrics {
-	metrics := &Metrics{filenames: filenames}
+	var err error
+	var fi os.FileInfo
+	fnames := []string{}
+	for _, filename := range filenames {
+		if fi, err = os.Stat(filename); err != nil {
+			continue
+		}
+		switch mode := fi.Mode(); {
+		case mode.IsDir():
+			files, _ := ioutil.ReadDir(filename)
+			for _, file := range files {
+				if file.IsDir() == false &&
+					(strings.HasPrefix(file.Name(), "metrics.") || strings.HasPrefix(file.Name(), "keyhole_stats.")) {
+					fnames = append(fnames, filename+"/"+file.Name())
+				}
+			}
+		case mode.IsRegular():
+			fnames = append(fnames, filename)
+		}
+	}
+	metrics := &Metrics{filenames: fnames}
 	diag := NewDiagnosticData(300)
-	if err := diag.DecodeDiagnosticData(filenames); err != nil { // get summary
+	if err := diag.DecodeDiagnosticData(metrics.filenames); err != nil { // get summary
 		log.Fatal(err)
 	}
 	metrics.SetFTDCSummaryStats(diag)
-	go func(m *Metrics, diag *DiagnosticData, filenames []string) {
-		diag = NewDiagnosticData(1)
+	go func(m *Metrics, filenames []string) {
+		span := 1
+		if len(filenames) > 5 {
+			span = 5 * int(math.Ceil(float64(len(filenames))/5))
+		}
+		diag := NewDiagnosticData(span)
 		diag.DecodeDiagnosticData(filenames)
 		m.SetFTDCDetailStats(diag)
-	}(metrics, diag, filenames)
+	}(metrics, metrics.filenames)
 	return metrics
 }
 
@@ -89,13 +117,6 @@ func (m *Metrics) readDirectory(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		m.SetFTDCSummaryStats(diag)
-
-		diag = NewDiagnosticData(1)
-		if err = diag.DecodeDiagnosticData(filenames); err != nil {
-			json.NewEncoder(w).Encode(bson.M{"ok": 0, "err": err.Error()})
-			return
-		}
-		m.SetFTDCDetailStats(diag)
 		json.NewEncoder(w).Encode(bson.M{"ok": 1, "dir": dr.Dir})
 	default:
 		http.Error(w, "bad method; supported OPTIONS, POST", http.StatusBadRequest)
@@ -105,8 +126,7 @@ func (m *Metrics) readDirectory(w http.ResponseWriter, r *http.Request) {
 
 func (m *Metrics) search(w http.ResponseWriter, r *http.Request) {
 	var list []string
-
-	for _, doc := range m.detailFTDC.timeSeriesData {
+	for _, doc := range m.summaryFTDC.timeSeriesData {
 		list = append(list, doc.Target)
 	}
 
@@ -120,11 +140,7 @@ func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
 	if err := decoder.Decode(&qr); err != nil {
 		return
 	}
-
-	ftdc := m.summaryFTDC
-	if qr.Range.To.Sub(qr.Range.From).Hours() < 24 {
-		ftdc = m.detailFTDC
-	}
+	ftdc := m.detailFTDC
 	var tsData []interface{}
 	for _, target := range qr.Targets {
 		if target.Type == "timeserie" {
@@ -178,39 +194,30 @@ func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(tsData)
 }
 
+func parseTime(filename string) (time.Time, error) {
+	layout := "2006-01-02T15-04-05Z"
+	x := strings.Index(filename, "metrics.")
+	y := strings.LastIndex(filename, "-")
+	if x < 0 || y < 0 || y < x {
+		return time.Now(), errors.New("not valid")
+	}
+	t, err := time.Parse(layout, filename[x+8:y])
+	if err != nil {
+		return time.Now(), err
+	}
+	return t, nil
+}
+
 func filterTimeSeriesData(tsData TimeSeriesDoc, from time.Time, to time.Time) TimeSeriesDoc {
 	var data = TimeSeriesDoc{DataPoints: [][]float64{}}
+	hours := int(to.Sub(from).Hours()) + 1
 	data.Target = tsData.Target
-	for _, v := range tsData.DataPoints {
+	for i, v := range tsData.DataPoints {
 		tm := time.Unix(0, int64(v[1])*int64(time.Millisecond))
-		if tm.After(to) || tm.Before(from) {
+		if (i%hours) != 0 || tm.After(to) || tm.Before(from) {
 			continue
 		}
 		data.DataPoints = append(data.DataPoints, v)
-	}
-
-	max := 1000 // max data points, 5 minutes * 1000 = 84 hours
-	if len(data.DataPoints) > max {
-		frac := len(data.DataPoints) / max
-		var datax = TimeSeriesDoc{DataPoints: [][]float64{}}
-		datax.Target = tsData.Target
-		count := 0
-		sum := float64(0)
-		last := len(data.DataPoints) - 1
-		for i, v := range data.DataPoints {
-			if v[0] > 0 || count == 0 { // has value or the first value
-				sum += v[0]
-				count++
-			}
-			if i%frac != 0 && i != last {
-				continue
-			}
-			v[0] = math.Round(sum / float64(count))
-			datax.DataPoints = append(datax.DataPoints, v)
-			count = 0
-			sum = 0
-		}
-		return datax
 	}
 	return data
 }
