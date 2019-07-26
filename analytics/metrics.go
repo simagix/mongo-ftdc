@@ -55,6 +55,7 @@ func NewMetrics(filenames []string) *Metrics {
 		log.Fatal(err)
 	}
 	metrics.SetFTDCSummaryStats(diag)
+	metrics.SetFTDCDetailStats(diag)
 	go func(m *Metrics, filenames []string) {
 		span := 1
 		if len(filenames) > 5 {
