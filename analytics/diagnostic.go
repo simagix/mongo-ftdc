@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -59,6 +60,7 @@ type DiagnosticData struct {
 	ReplSetStatusList []ReplSetStatusDoc
 	SystemMetricsList []SystemMetricsDoc
 	span              int
+	endpoint          string
 }
 
 // DiagnosticDoc -
@@ -109,12 +111,11 @@ func (d *DiagnosticData) DecodeDiagnosticData(filenames []string) error {
 
 	log.Printf("FTDC data from %v to %v\n", d.ServerStatusList[0].LocalTime.Format("2006-01-02T15:04:05Z"),
 		d.ServerStatusList[len(d.ServerStatusList)-1].LocalTime.Format("2006-01-02T15:04:05Z"))
-	log.Printf("http://localhost:3000/d/VKYb9eamz/mongodb-ftdc-analytics?orgId=1&from=%v&to=%v\n",
+	d.endpoint = fmt.Sprintf("/d/simagix-grafana/mongodb-mongo-ftdc?orgId=1&from=%v&to=%v",
 		d.ServerStatusList[0].LocalTime.Unix()*1000,
 		d.ServerStatusList[len(d.ServerStatusList)-1].LocalTime.Unix()*1000)
-	log.Printf("http://localhost:3030/d/VKYb9eamz/mongodb-ftdc-analytics?orgId=1&from=%v&to=%v\n",
-		d.ServerStatusList[0].LocalTime.Unix()*1000,
-		d.ServerStatusList[len(d.ServerStatusList)-1].LocalTime.Unix()*1000)
+	log.Printf("http://localhost:3000%v\n", d.endpoint)
+	log.Printf("http://localhost:3030%v\n", d.endpoint)
 	return nil
 }
 

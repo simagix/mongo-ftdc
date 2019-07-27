@@ -29,6 +29,32 @@ type Metrics struct {
 
 // NewMetrics returns &Metrics
 func NewMetrics(filenames []string) *Metrics {
+	metrics := &Metrics{filenames: getFilenames(filenames)}
+	metrics.parse()
+	return metrics
+}
+
+func (m *Metrics) parse() string {
+	diag := NewDiagnosticData(300)
+	if err := diag.DecodeDiagnosticData(m.filenames); err != nil { // get summary
+		log.Fatal(err)
+	}
+	m.SetFTDCSummaryStats(diag)
+	m.SetFTDCDetailStats(diag)
+	str := diag.endpoint
+	go func(m *Metrics, filenames []string) {
+		span := 1
+		if len(filenames) > 5 {
+			span = 5 * int(math.Ceil(float64(len(filenames))/5))
+		}
+		diag := NewDiagnosticData(span)
+		diag.DecodeDiagnosticData(filenames)
+		m.SetFTDCDetailStats(diag)
+	}(m, m.filenames)
+	return str
+}
+
+func getFilenames(filenames []string) []string {
 	var err error
 	var fi os.FileInfo
 	fnames := []string{}
@@ -49,23 +75,7 @@ func NewMetrics(filenames []string) *Metrics {
 			fnames = append(fnames, filename)
 		}
 	}
-	metrics := &Metrics{filenames: fnames}
-	diag := NewDiagnosticData(300)
-	if err := diag.DecodeDiagnosticData(metrics.filenames); err != nil { // get summary
-		log.Fatal(err)
-	}
-	metrics.SetFTDCSummaryStats(diag)
-	metrics.SetFTDCDetailStats(diag)
-	go func(m *Metrics, filenames []string) {
-		span := 1
-		if len(filenames) > 5 {
-			span = 5 * int(math.Ceil(float64(len(filenames))/5))
-		}
-		diag := NewDiagnosticData(span)
-		diag.DecodeDiagnosticData(filenames)
-		m.SetFTDCDetailStats(diag)
-	}(metrics, metrics.filenames)
-	return metrics
+	return fnames
 }
 
 // Handler handle HTTP requests
@@ -111,14 +121,10 @@ func (m *Metrics) readDirectory(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(bson.M{"ok": 0, "err": err.Error()})
 			return
 		}
-		var filenames = []string{dr.Dir}
-		diag := NewDiagnosticData(300) // summary
-		if err = diag.DecodeDiagnosticData(filenames); err != nil {
-			json.NewEncoder(w).Encode(bson.M{"ok": 0, "err": err.Error()})
-			return
-		}
-		m.SetFTDCSummaryStats(diag)
-		json.NewEncoder(w).Encode(bson.M{"ok": 1, "dir": dr.Dir})
+		m.filenames = getFilenames([]string{dr.Dir})
+		ep := m.parse()
+		json.NewEncoder(w).Encode(bson.M{"ok": 1, "endpoint": ep})
+
 	default:
 		http.Error(w, "bad method; supported OPTIONS, POST", http.StatusBadRequest)
 		return
