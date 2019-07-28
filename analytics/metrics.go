@@ -30,7 +30,9 @@ type Metrics struct {
 // NewMetrics returns &Metrics
 func NewMetrics(filenames []string) *Metrics {
 	metrics := &Metrics{filenames: getFilenames(filenames)}
-	metrics.parse()
+	if len(metrics.filenames) > 0 {
+		metrics.parse()
+	}
 	return metrics
 }
 
