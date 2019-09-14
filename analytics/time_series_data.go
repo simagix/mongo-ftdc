@@ -3,6 +3,7 @@
 package analytics
 
 import (
+	"fmt"
 	"log"
 	"sort"
 	"strconv"
@@ -158,6 +159,7 @@ func initReplSetGetStatusTimeSeriesDoc(replSetGetStatusList []ReplSetStatusDoc) 
 		if len(hosts) == 0 || len(hosts) != len(stat.Members) {
 			hosts = hosts[:0]
 			for n, mb := range stat.Members {
+				hostname := fmt.Sprintf("host-%v", n)
 				a := strings.Index(mb.Name, ".")
 				b := strings.LastIndex(mb.Name, ":")
 				var legend string
@@ -166,7 +168,8 @@ func initReplSetGetStatusTimeSeriesDoc(replSetGetStatusList []ReplSetStatusDoc) 
 				} else {
 					legend = mb.Name[0:a] + mb.Name[b:]
 				}
-				hosts = append(hosts, legend)
+				log.Println(hostname, legend)
+				hosts = append(hosts, hostname)
 				timeSeriesData[legend] = TimeSeriesDoc{legend, [][]float64{}}
 				node := "repl_" + strconv.Itoa(n)
 				timeSeriesData[node] = TimeSeriesDoc{node, [][]float64{}}

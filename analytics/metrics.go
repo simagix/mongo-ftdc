@@ -190,7 +190,7 @@ func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
 				rowList := [][]string{}
 
 				rowList = append(rowList, []string{"CPU", strconv.Itoa(si.HostInfo.System.NumCores) + " cores (" + si.HostInfo.System.CPUArch + ")"})
-				rowList = append(rowList, []string{"Hostname", si.HostInfo.System.Hostname})
+				// rowList = append(rowList, []string{"Hostname", si.HostInfo.System.Hostname})
 				rowList = append(rowList, []string{"Memory (MB)", strconv.Itoa(si.HostInfo.System.MemSizeMB)})
 				rowList = append(rowList, []string{"MongoDB Version", si.BuildInfo.Version})
 				rowList = append(rowList, []string{"OS", si.HostInfo.OS.Name})
