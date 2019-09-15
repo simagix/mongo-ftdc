@@ -3,6 +3,7 @@
 package analytics
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"sort"
@@ -42,7 +43,7 @@ type QueryRequest struct {
 
 var serverStatusChartsLegends = []string{
 	"mem_resident", "mem_virtual", "mem_page_faults",
-	"conns_available", "conns_current", "conns_created_per_minute",
+	"conns_active", "conns_available", "conns_current", "conns_created_per_minute",
 	"ops_query", "ops_insert", "ops_update", "ops_delete", "ops_getmore", "ops_command",
 	"q_active_read", "q_active_write", "q_queued_read", "q_queued_write",
 }
@@ -81,8 +82,8 @@ type DiskStats struct {
 }
 
 // setFTDCStats -
-func setFTDCStats(diag *DiagnosticData, g *FTDCStats) {
-	g.serverInfo = diag.ServerInfo
+func setFTDCStats(diag *DiagnosticData, ftdc *FTDCStats) {
+	ftdc.serverInfo = diag.ServerInfo
 	btm := time.Now()
 	var serverStatusTSD map[string]TimeSeriesDoc
 	var wiredTigerTSD map[string]TimeSeriesDoc
@@ -115,20 +116,23 @@ func setFTDCStats(diag *DiagnosticData, g *FTDCStats) {
 	wg.Wait()
 
 	// merge
-	g.timeSeriesData = serverStatusTSD
+	ftdc.timeSeriesData = serverStatusTSD
 	for k, v := range wiredTigerTSD {
-		g.timeSeriesData[k] = v
+		ftdc.timeSeriesData[k] = v
 	}
-	g.replicationLags = replicationLags
+	ftdc.replicationLags = replicationLags
 	for k, v := range replicationTSD {
-		g.timeSeriesData[k] = v
+		ftdc.timeSeriesData[k] = v
 	}
-	g.diskStats = diskStats
+	ftdc.diskStats = diskStats
 	for k, v := range systemMetricsTSD {
-		g.timeSeriesData[k] = v
+		ftdc.timeSeriesData[k] = v
 	}
 	etm := time.Now()
-	log.Println("data points ready, time spent:", etm.Sub(btm).String())
+	var doc ServerInfoDoc
+	b, _ := json.Marshal(ftdc.serverInfo)
+	json.Unmarshal(b, &doc)
+	log.Println("data points ready for", doc.HostInfo.System.Hostname, ", time spent:", etm.Sub(btm).String())
 }
 
 func getDataPoint(v float64, t float64) []float64 {
@@ -291,6 +295,10 @@ func initServerStatusTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[strin
 			x = timeSeriesData["mem_virtual"]
 			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Mem.Virtual)/1024, t))
 			timeSeriesData["mem_virtual"] = x
+
+			x = timeSeriesData["conns_active"]
+			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Connections.Active), t))
+			timeSeriesData["conns_active"] = x
 
 			x = timeSeriesData["conns_available"]
 			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Connections.Available), t))

@@ -119,6 +119,7 @@ type ConnectionsDoc struct {
 	Current      int64 `json:"current" bson:"current"`
 	Available    int64 `json:"available" bson:"available"`
 	TotalCreated int64 `json:"totalCreated" bson:"totalCreated"`
+	Active       int64 `json:"active" bson:"active"`
 }
 
 // ServerStatusDoc contains docs from db.serverStatus()

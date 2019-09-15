@@ -16,6 +16,10 @@ func getServerStatusDataPoints(attribsMap map[string][]int64, i uint32) ServerSt
 	ss.Mem.Virtual = attribsMap["serverStatus/mem/virtual"][i]
 	ss.Connections.Current = attribsMap["serverStatus/connections/current"][i]
 	ss.Connections.TotalCreated = attribsMap["serverStatus/connections/totalCreated"][i]
+	ss.Connections.Available = attribsMap["serverStatus/connections/available"][i]
+	if len(attribsMap["serverStatus/connections/active"]) > 0 { // after 4.0
+		ss.Connections.Active = attribsMap["serverStatus/connections/active"][i]
+	}
 	ss.ExtraInfo.PageFaults = attribsMap["serverStatus/extra_info/page_faults"][i]
 	ss.GlobalLock.ActiveClients.Readers = attribsMap["serverStatus/globalLock/activeClients/readers"][i]
 	ss.GlobalLock.ActiveClients.Writers = attribsMap["serverStatus/globalLock/activeClients/writers"][i]
@@ -24,7 +28,7 @@ func getServerStatusDataPoints(attribsMap map[string][]int64, i uint32) ServerSt
 	ss.Metrics.QueryExecutor.Scanned = attribsMap["serverStatus/metrics/queryExecutor/scanned"][i]
 	ss.Metrics.QueryExecutor.ScannedObjects = attribsMap["serverStatus/metrics/queryExecutor/scannedObjects"][i]
 	ss.Metrics.Operation.ScanAndOrder = attribsMap["serverStatus/metrics/operation/scanAndOrder"][i]
-	if len(attribsMap["serverStatus/opLatencies/commands/latency"]) > 1 { // 3.2 didn't have opLatencies
+	if len(attribsMap["serverStatus/opLatencies/commands/latency"]) > 0 { // 3.2 didn't have opLatencies
 		ss.OpLatencies.Commands.Latency = attribsMap["serverStatus/opLatencies/commands/latency"][i]
 		ss.OpLatencies.Commands.Ops = attribsMap["serverStatus/opLatencies/commands/ops"][i]
 		ss.OpLatencies.Reads.Latency = attribsMap["serverStatus/opLatencies/reads/latency"][i]
