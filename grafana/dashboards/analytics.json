@@ -283,6 +283,16 @@
           "refId": "B",
           "target": "conns_created_per_minute",
           "type": "timeserie"
+        },
+        {
+          "refId": "C",
+          "target": "conns_available",
+          "type": "timeserie"
+        },
+        {
+          "refId": "D",
+          "target": "conns_active",
+          "type": "timeserie"
         }
       ],
       "thresholds": [],
