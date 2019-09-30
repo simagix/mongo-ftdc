@@ -30,6 +30,8 @@ type Metrics struct {
 	summaryFTDC FTDCStats
 	detailFTDC  FTDCStats
 	filenames   []string
+	isProcessed bool
+	outputOnly  bool
 }
 
 // NewMetrics returns &Metrics
@@ -38,66 +40,79 @@ func NewMetrics(filenames []string) *Metrics {
 	gob.Register(primitive.A{})
 	gob.Register(primitive.D{})
 	gob.Register(primitive.M{})
-	metrics := &Metrics{filenames: getFilenames(filenames)}
+	metrics := &Metrics{filenames: getFilenames(filenames), isProcessed: false}
 	if len(metrics.filenames) == 0 {
 		return metrics
 	}
 	infile := filenames[0]
 	if len(filenames) == 1 && strings.HasSuffix(infile, ".ftdc-enc.gz") {
-		log.Println("Reading from FTDC metadata", infile)
-		var err error
-		var data []byte
-		var file *os.File
-		var reader *bufio.Reader
-
-		if file, err = os.Open(infile); err != nil {
-			log.Println(err)
-			return metrics
-		}
-		if reader, err = gox.NewReader(file); err != nil {
-			log.Println(err)
-			return metrics
-		}
-		if data, err = ioutil.ReadAll(reader); err != nil {
-			log.Println(err)
-			return metrics
-		}
-		buffer := bytes.NewBuffer(data)
-		dec := gob.NewDecoder(buffer)
-		if err = dec.Decode(&metrics.detailFTDC); err != nil {
-			log.Println(err)
-			return metrics
-		}
-
-		points := metrics.detailFTDC.TimeSeriesData["wt_cache_used"].DataPoints
-		tm1 := time.Unix(0, int64(points[0][1])*int64(time.Millisecond)).Unix() * 1000
-		tm2 := time.Unix(0, int64(points[len(points)-1][1])*int64(time.Millisecond)).Unix() * 1000
-		log.Println(tm1, tm2)
-		endpoint := fmt.Sprintf("/d/simagix-grafana/mongodb-mongo-ftdc?orgId=1&from=%v&to=%v", tm1, tm2)
-		log.Printf("http://localhost:3000%v\n", endpoint)
-		log.Printf("http://localhost:3030%v\n", endpoint)
-	} else {
-		metrics.parse()
+		metrics.isProcessed = true
 	}
 	return metrics
 }
 
+// SetOutputOnly set output flag to process FTDC in foreground
+func (m *Metrics) SetOutputOnly(outputOnly bool) {
+	m.outputOnly = outputOnly
+}
+
+// Read reads metrics files/data
+func (m *Metrics) Read() {
+	infile := m.filenames[0]
+	if m.isProcessed == true {
+		if err := m.readProcessedFTDC(infile); err != nil {
+			log.Println(err)
+		}
+	} else {
+		m.parse()
+	}
+}
+
+func (m *Metrics) readProcessedFTDC(infile string) error {
+	log.Println("Reading from processed FTDC data", infile)
+	var err error
+	var data []byte
+	var file *os.File
+	var reader *bufio.Reader
+
+	if file, err = os.Open(infile); err != nil {
+		return err
+	}
+	if reader, err = gox.NewReader(file); err != nil {
+		return err
+	}
+	if data, err = ioutil.ReadAll(reader); err != nil {
+		return err
+	}
+	buffer := bytes.NewBuffer(data)
+	dec := gob.NewDecoder(buffer)
+	if err = dec.Decode(&m.detailFTDC); err != nil {
+		return err
+	}
+
+	points := m.detailFTDC.TimeSeriesData["wt_cache_used"].DataPoints
+	tm1 := time.Unix(0, int64(points[0][1])*int64(time.Millisecond)).Unix() * 1000
+	tm2 := time.Unix(0, int64(points[len(points)-1][1])*int64(time.Millisecond)).Unix() * 1000
+	log.Println(tm1, tm2)
+	endpoint := fmt.Sprintf("/d/simagix-grafana/mongodb-mongo-ftdc?orgId=1&from=%v&to=%v", tm1, tm2)
+	log.Printf("http://localhost:3000%v\n", endpoint)
+	log.Printf("http://localhost:3030%v\n", endpoint)
+	return err
+}
+
 func (m *Metrics) parse() string {
+	if m.outputOnly == true {
+		diag := decode(m.filenames, 1)
+		m.SetFTDCDetailStats(diag)
+		m.outputProcessedFTDC()
+		return diag.endpoint
+	}
 	diag := decode(m.filenames, 300)
 	m.SetFTDCSummaryStats(diag)
 	m.SetFTDCDetailStats(diag)
 	go func(filenames []string) {
 		diag := decode(filenames, 1)
 		m.SetFTDCDetailStats(diag)
-		var data bytes.Buffer
-		enc := gob.NewEncoder(&data)
-		if err := enc.Encode(m.detailFTDC); err != nil {
-			log.Println("encode error:", err)
-		}
-		ofile := filepath.Base(filenames[0]) + ".ftdc-enc.gz"
-		gox.OutputGzipped(data.Bytes(), ofile)
-		log.Println("FTDC metadata written to", ofile)
-
 	}(m.filenames)
 	return diag.endpoint
 }
@@ -108,6 +123,18 @@ func decode(filenames []string, span int) *DiagnosticData {
 		log.Fatal(err)
 	}
 	return diag
+}
+
+// outputProcessedFTDC outputs processed FTDC data
+func (m *Metrics) outputProcessedFTDC() {
+	var data bytes.Buffer
+	enc := gob.NewEncoder(&data)
+	if err := enc.Encode(m.detailFTDC); err != nil {
+		log.Println("encode error:", err)
+	}
+	ofile := filepath.Base(m.filenames[0]) + ".ftdc-enc.gz"
+	gox.OutputGzipped(data.Bytes(), ofile)
+	log.Println("FTDC metadata written to", ofile)
 }
 
 func getFilenames(filenames []string) []string {
