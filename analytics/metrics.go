@@ -3,20 +3,25 @@
 package analytics
 
 import (
+	"bufio"
+	"bytes"
+	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
-	"math"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/simagix/gox"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // Metrics stores metrics from FTDC data
@@ -25,35 +30,111 @@ type Metrics struct {
 	summaryFTDC FTDCStats
 	detailFTDC  FTDCStats
 	filenames   []string
+	isProcessed bool
+	outputOnly  bool
 }
 
 // NewMetrics returns &Metrics
 func NewMetrics(filenames []string) *Metrics {
-	metrics := &Metrics{filenames: getFilenames(filenames)}
-	if len(metrics.filenames) > 0 {
-		metrics.parse()
+	gob.Register(primitive.DateTime(1))
+	gob.Register(primitive.A{})
+	gob.Register(primitive.D{})
+	gob.Register(primitive.M{})
+	metrics := &Metrics{filenames: getFilenames(filenames), isProcessed: false}
+	if len(metrics.filenames) == 0 {
+		return metrics
+	}
+	infile := filenames[0]
+	if len(filenames) == 1 && strings.HasSuffix(infile, ".ftdc-enc.gz") {
+		metrics.isProcessed = true
 	}
 	return metrics
 }
 
-func (m *Metrics) parse() string {
-	diag := NewDiagnosticData(300)
-	if err := diag.DecodeDiagnosticData(m.filenames); err != nil { // get summary
-		log.Fatal(err)
+// SetOutputOnly set output flag to process FTDC in foreground
+func (m *Metrics) SetOutputOnly(outputOnly bool) {
+	m.outputOnly = outputOnly
+}
+
+// Read reads metrics files/data
+func (m *Metrics) Read() {
+	infile := m.filenames[0]
+	if m.isProcessed == true {
+		if err := m.readProcessedFTDC(infile); err != nil {
+			log.Println(err)
+		}
+	} else {
+		m.parse()
 	}
+}
+
+func (m *Metrics) readProcessedFTDC(infile string) error {
+	log.Println("Reading from processed FTDC data", infile)
+	var err error
+	var data []byte
+	var file *os.File
+	var reader *bufio.Reader
+
+	if file, err = os.Open(infile); err != nil {
+		return err
+	}
+	if reader, err = gox.NewReader(file); err != nil {
+		return err
+	}
+	if data, err = ioutil.ReadAll(reader); err != nil {
+		return err
+	}
+	buffer := bytes.NewBuffer(data)
+	dec := gob.NewDecoder(buffer)
+	if err = dec.Decode(&m.detailFTDC); err != nil {
+		return err
+	}
+
+	points := m.detailFTDC.TimeSeriesData["wt_cache_used"].DataPoints
+	tm1 := time.Unix(0, int64(points[0][1])*int64(time.Millisecond)).Unix() * 1000
+	tm2 := time.Unix(0, int64(points[len(points)-1][1])*int64(time.Millisecond)).Unix() * 1000
+	log.Println(tm1, tm2)
+	endpoint := fmt.Sprintf("/d/simagix-grafana/mongodb-mongo-ftdc?orgId=1&from=%v&to=%v", tm1, tm2)
+	log.Printf("http://localhost:3000%v\n", endpoint)
+	log.Printf("http://localhost:3030%v\n", endpoint)
+	return err
+}
+
+func (m *Metrics) parse() string {
+	if m.outputOnly == true {
+		diag := decode(m.filenames, 1)
+		m.SetFTDCDetailStats(diag)
+		m.outputProcessedFTDC()
+		return diag.endpoint
+	}
+	diag := decode(m.filenames, 300)
 	m.SetFTDCSummaryStats(diag)
 	m.SetFTDCDetailStats(diag)
-	str := diag.endpoint
-	go func(m *Metrics, filenames []string) {
-		span := 1
-		if len(filenames) > 5 {
-			span = 5 * int(math.Ceil(float64(len(filenames))/5))
-		}
-		diag := NewDiagnosticData(span)
-		diag.DecodeDiagnosticData(filenames)
+	go func(filenames []string) {
+		diag := decode(filenames, 1)
 		m.SetFTDCDetailStats(diag)
-	}(m, m.filenames)
-	return str
+	}(m.filenames)
+	return diag.endpoint
+}
+
+func decode(filenames []string, span int) *DiagnosticData {
+	diag := NewDiagnosticData(span)
+	if err := diag.DecodeDiagnosticData(filenames); err != nil { // get summary
+		log.Fatal(err)
+	}
+	return diag
+}
+
+// outputProcessedFTDC outputs processed FTDC data
+func (m *Metrics) outputProcessedFTDC() {
+	var data bytes.Buffer
+	enc := gob.NewEncoder(&data)
+	if err := enc.Encode(m.detailFTDC); err != nil {
+		log.Println("encode error:", err)
+	}
+	ofile := filepath.Base(m.filenames[0]) + ".ftdc-enc.gz"
+	gox.OutputGzipped(data.Bytes(), ofile)
+	log.Println("FTDC metadata written to", ofile)
 }
 
 func getFilenames(filenames []string) []string {
@@ -135,7 +216,7 @@ func (m *Metrics) readDirectory(w http.ResponseWriter, r *http.Request) {
 
 func (m *Metrics) search(w http.ResponseWriter, r *http.Request) {
 	var list []string
-	for _, doc := range m.summaryFTDC.timeSeriesData {
+	for _, doc := range m.summaryFTDC.TimeSeriesData {
 		list = append(list, doc.Target)
 	}
 
@@ -154,25 +235,25 @@ func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
 	for _, target := range qr.Targets {
 		if target.Type == "timeserie" {
 			if target.Target == "replication_lags" { // replaced with actual hostname
-				for k, v := range ftdc.replicationLags {
+				for k, v := range ftdc.ReplicationLags {
 					data := v
 					data.Target = k
 					tsData = append(tsData, filterTimeSeriesData(data, qr.Range.From, qr.Range.To))
 				}
 			} else if target.Target == "disks_utils" {
-				for k, v := range ftdc.diskStats {
-					data := v.utilization
+				for k, v := range ftdc.DiskStats {
+					data := v.Utilization
 					data.Target = k
 					tsData = append(tsData, filterTimeSeriesData(data, qr.Range.From, qr.Range.To))
 				}
 			} else if target.Target == "disks_iops" {
-				for k, v := range ftdc.diskStats {
-					data := v.iops
+				for k, v := range ftdc.DiskStats {
+					data := v.IOPS
 					data.Target = k
 					tsData = append(tsData, filterTimeSeriesData(data, qr.Range.From, qr.Range.To))
 				}
 			} else {
-				tsData = append(tsData, filterTimeSeriesData(ftdc.timeSeriesData[target.Target], qr.Range.From, qr.Range.To))
+				tsData = append(tsData, filterTimeSeriesData(ftdc.TimeSeriesData[target.Target], qr.Range.From, qr.Range.To))
 			}
 		} else if target.Type == "table" {
 			if target.Target == "host_info" {
@@ -180,7 +261,7 @@ func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
 				headerList = append(headerList, bson.M{"text": "Info", "type": "string"})
 				headerList = append(headerList, bson.M{"text": "Value", "type": "string"})
 				var si ServerInfoDoc
-				b, _ := json.Marshal(ftdc.serverInfo)
+				b, _ := json.Marshal(ftdc.ServerInfo)
 				if err := json.Unmarshal(b, &si); err != nil {
 					rowList := [][]string{[]string{"Error", err.Error()}}
 					doc1 := bson.M{"columns": headerList, "type": "table", "rows": rowList}

@@ -14,6 +14,7 @@ import (
 // SingleJSONServer spins up a Single JSON web server for Grafana
 func SingleJSONServer(filenames []string) {
 	metrics := NewMetrics(filenames)
+	metrics.Read()
 	http.HandleFunc("/grafana", gox.Cors(metrics.Handler))
 	http.HandleFunc("/grafana/", gox.Cors(metrics.Handler))
 	hostname, _ := os.Hostname()

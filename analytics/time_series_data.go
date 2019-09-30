@@ -69,21 +69,21 @@ type Grafana struct {
 
 // FTDCStats FTDC stats
 type FTDCStats struct {
-	serverInfo      interface{}
-	timeSeriesData  map[string]TimeSeriesDoc
-	replicationLags map[string]TimeSeriesDoc
-	diskStats       map[string]DiskStats
+	ServerInfo      interface{}
+	TimeSeriesData  map[string]TimeSeriesDoc
+	ReplicationLags map[string]TimeSeriesDoc
+	DiskStats       map[string]DiskStats
 }
 
 // DiskStats -
 type DiskStats struct {
-	utilization TimeSeriesDoc
-	iops        TimeSeriesDoc
+	Utilization TimeSeriesDoc
+	IOPS        TimeSeriesDoc
 }
 
 // setFTDCStats -
 func setFTDCStats(diag *DiagnosticData, ftdc *FTDCStats) {
-	ftdc.serverInfo = diag.ServerInfo
+	ftdc.ServerInfo = diag.ServerInfo
 	btm := time.Now()
 	var serverStatusTSD map[string]TimeSeriesDoc
 	var wiredTigerTSD map[string]TimeSeriesDoc
@@ -116,21 +116,21 @@ func setFTDCStats(diag *DiagnosticData, ftdc *FTDCStats) {
 	wg.Wait()
 
 	// merge
-	ftdc.timeSeriesData = serverStatusTSD
+	ftdc.TimeSeriesData = serverStatusTSD
 	for k, v := range wiredTigerTSD {
-		ftdc.timeSeriesData[k] = v
+		ftdc.TimeSeriesData[k] = v
 	}
-	ftdc.replicationLags = replicationLags
+	ftdc.ReplicationLags = replicationLags
 	for k, v := range replicationTSD {
-		ftdc.timeSeriesData[k] = v
+		ftdc.TimeSeriesData[k] = v
 	}
-	ftdc.diskStats = diskStats
+	ftdc.DiskStats = diskStats
 	for k, v := range systemMetricsTSD {
-		ftdc.timeSeriesData[k] = v
+		ftdc.TimeSeriesData[k] = v
 	}
 	etm := time.Now()
 	var doc ServerInfoDoc
-	b, _ := json.Marshal(ftdc.serverInfo)
+	b, _ := json.Marshal(ftdc.ServerInfo)
 	json.Unmarshal(b, &doc)
 	log.Println("data points ready for", doc.HostInfo.System.Hostname, ", time spent:", etm.Sub(btm).String())
 }
@@ -235,8 +235,8 @@ func initSystemMetricsTimeSeriesDoc(systemMetricsList []SystemMetricsDoc) (map[s
 				iops := float64(disk.Reads+disk.Writes-(pstat.Disks[k].Reads+pstat.Disks[k].Writes)) / float64(stat.Start.Sub(pstat.Start).Seconds())
 
 				x := diskStats[k]
-				x.utilization.DataPoints = append(x.utilization.DataPoints, getDataPoint(u, t))
-				x.iops.DataPoints = append(x.iops.DataPoints, getDataPoint(iops, t))
+				x.Utilization.DataPoints = append(x.Utilization.DataPoints, getDataPoint(u, t))
+				x.IOPS.DataPoints = append(x.IOPS.DataPoints, getDataPoint(iops, t))
 				diskStats[k] = x
 			}
 

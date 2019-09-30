@@ -3,7 +3,7 @@
 
 # build simagix/ftdc
 dep ensure -update
-ver=0.4.0
+ver=0.5.0
 mkdir -p bin
 env GOOS=darwin GOARCH=amd64 go build -o bin/ftdc-osx-x64 simple_json.go
 
