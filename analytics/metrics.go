@@ -113,6 +113,9 @@ func (m *Metrics) parse() string {
 	go func(filenames []string) {
 		diag := decode(filenames, 1)
 		m.SetFTDCDetailStats(diag)
+		endpoint := diag.GetEndPoint()
+		log.Printf("http://localhost:3000%v\n", endpoint)
+		log.Printf("http://localhost:3030%v\n", endpoint)
 	}(m.filenames)
 	return diag.endpoint
 }

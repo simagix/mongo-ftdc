@@ -77,6 +77,11 @@ func NewDiagnosticData(span int) *DiagnosticData {
 	return &DiagnosticData{ServerStatusList: []ServerStatusDoc{}, ReplSetStatusList: []ReplSetStatusDoc{}, span: span}
 }
 
+// GetEndPoint gets grafana uri
+func (d *DiagnosticData) GetEndPoint() string {
+	return d.endpoint
+}
+
 // DecodeDiagnosticData decodes FTDC data files
 func (d *DiagnosticData) DecodeDiagnosticData(filenames []string) error {
 	var err error
@@ -109,13 +114,11 @@ func (d *DiagnosticData) DecodeDiagnosticData(filenames []string) error {
 		return errors.New("no FTDC data found")
 	}
 
-	log.Printf("FTDC data from %v to %v\n", d.ServerStatusList[0].LocalTime.Format("2006-01-02T15:04:05Z"),
+	log.Printf("Stats from %v to %v\n", d.ServerStatusList[0].LocalTime.Format("2006-01-02T15:04:05Z"),
 		d.ServerStatusList[len(d.ServerStatusList)-1].LocalTime.Format("2006-01-02T15:04:05Z"))
 	d.endpoint = fmt.Sprintf("/d/simagix-grafana/mongodb-mongo-ftdc?orgId=1&from=%v&to=%v",
 		d.ServerStatusList[0].LocalTime.Unix()*1000,
 		d.ServerStatusList[len(d.ServerStatusList)-1].LocalTime.Unix()*1000)
-	log.Printf("http://localhost:3000%v\n", d.endpoint)
-	log.Printf("http://localhost:3030%v\n", d.endpoint)
 	return nil
 }
 
