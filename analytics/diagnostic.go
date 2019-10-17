@@ -218,8 +218,12 @@ func (d *DiagnosticData) readDiagnosticFile(filename string) (DiagnosticData, er
 	var diagData = DiagnosticData{}
 	var buffer []byte
 	var err error
+	var r *bufio.Reader
 
-	if buffer, err = ioutil.ReadFile(filename); err != nil {
+	if r, err = gox.NewFileReader(filename); err != nil {
+		return diagData, err
+	}
+	if buffer, err = ioutil.ReadAll(r); err != nil {
 		return diagData, err
 	}
 
