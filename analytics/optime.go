@@ -36,9 +36,20 @@ func GetOptime(optime interface{}) int64 {
 		var optm OptimeDoc
 		json.Unmarshal(b, &optm)
 		ts = int64(optm.T)
+	case map[string]interface{}:
+		d := primitive.D{{Key: optime.(map[string]interface{})["Key"].(string), Value: optime.(map[string]interface{})["Value"]}}
+		return GetOptime(d)
+	case []interface{}:
+		for _, intr := range optime.([]interface{}) {
+			if optm, ok := intr.(map[string]interface{}); !ok {
+				continue
+			} else if optm["Key"].(string) != "ts" {
+				continue
+			}
+			return GetOptime(intr)
+		}
 	default:
-		log.Println(fmt.Sprintf("default =>%T\n", optime))
+		log.Println(fmt.Sprintf("default => type: %T, value: %v\n", optime, optime))
 	}
-
 	return ts
 }
