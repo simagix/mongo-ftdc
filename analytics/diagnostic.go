@@ -311,6 +311,9 @@ func (d *DiagnosticData) analyzeServerStatus(filename string) error {
 	}
 
 	d.ServerStatusList = append(d.ServerStatusList, allDocs...)
+	if len(d.ServerStatusList) > 0 { // shortcut hack
+		d.ServerInfo = bson.M{"BuildInfo": bson.M{"Version": d.ServerStatusList[0].Version}}
+	}
 	d.ReplSetStatusList = append(d.ReplSetStatusList, allRepls...)
 	return err
 }
