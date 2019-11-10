@@ -286,23 +286,22 @@ func (d *DiagnosticData) analyzeServerStatus(filename string) error {
 		return err
 	}
 
+	cnt := 0
 	for {
 		line, ferr := reader.ReadBytes('\n')
 		if ferr == io.EOF {
 			break
 		}
-
-		docs = []ServerStatusDoc{}
-		if err = json.Unmarshal(line, &docs); err == nil {
-			if len(docs) > 0 && docs[0].Host != "" {
-				allDocs = append(allDocs, docs...)
-			} else if err = json.Unmarshal(line, &repls); err == nil { // ReplSetStatusDoc
-				allRepls = append(allRepls, repls...)
-			} else {
-				log.Println(err)
-			}
-		} else {
-			log.Println(err)
+		cnt++
+		if cnt == 1 {
+			json.Unmarshal(line, &docs)
+			allDocs = append(allDocs, docs...)
+		} else if cnt == 2 { // serverInfo
+			json.Unmarshal(line, &repls)
+			allRepls = append(allRepls, repls...)
+		} else if cnt == 3 { // serverInfo
+			d.ServerInfo = bson.M{}
+			json.Unmarshal(line, &d.ServerInfo)
 		}
 	}
 
@@ -311,7 +310,7 @@ func (d *DiagnosticData) analyzeServerStatus(filename string) error {
 	}
 
 	d.ServerStatusList = append(d.ServerStatusList, allDocs...)
-	if len(d.ServerStatusList) > 0 { // shortcut hack
+	if cnt < 3 && len(d.ServerStatusList) > 0 { // shortcut hack
 		d.ServerInfo = bson.M{"BuildInfo": bson.M{"Version": d.ServerStatusList[0].Version}}
 	}
 	d.ReplSetStatusList = append(d.ReplSetStatusList, allRepls...)
