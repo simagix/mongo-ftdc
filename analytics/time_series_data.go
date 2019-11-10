@@ -326,6 +326,9 @@ func initServerStatusTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[strin
 
 			if i > 0 {
 				minutes := stat.LocalTime.Sub(pstat.LocalTime).Minutes()
+				if minutes < 1 {
+					minutes = 1
+				}
 
 				x = timeSeriesData["mem_page_faults"]
 				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.ExtraInfo.PageFaults-pstat.ExtraInfo.PageFaults), t))
@@ -424,6 +427,9 @@ func initWiredTigerTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]
 
 			if i > 0 {
 				minutes := stat.LocalTime.Sub(pstat.LocalTime).Minutes()
+				if minutes < 1 {
+					minutes = 1
+				}
 
 				x = timeSeriesData["scan_keys"]
 				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.QueryExecutor.Scanned-pstat.Metrics.QueryExecutor.Scanned), t))

@@ -270,39 +270,32 @@ func (d *DiagnosticData) readDiagnosticFile(filename string) (DiagnosticData, er
 // analyzeServerStatus -
 func (d *DiagnosticData) analyzeServerStatus(filename string) error {
 	var err error
-	var file *os.File
 	var reader *bufio.Reader
 	var allDocs = []ServerStatusDoc{}
 	var docs = []ServerStatusDoc{}
 	var allRepls = []ReplSetStatusDoc{}
 	var repls = []ReplSetStatusDoc{}
 
-	if file, err = os.Open(filename); err != nil {
-		return err
-	}
-	defer file.Close()
-
-	if reader, err = gox.NewReader(file); err != nil {
+	if reader, err = gox.NewFileReader(filename); err != nil {
 		return err
 	}
 
+	cnt := 0
 	for {
 		line, ferr := reader.ReadBytes('\n')
 		if ferr == io.EOF {
 			break
 		}
-
-		docs = []ServerStatusDoc{}
-		if err = json.Unmarshal(line, &docs); err == nil {
-			if len(docs) > 0 && docs[0].Host != "" {
-				allDocs = append(allDocs, docs...)
-			} else if err = json.Unmarshal(line, &repls); err == nil { // ReplSetStatusDoc
-				allRepls = append(allRepls, repls...)
-			} else {
-				log.Println(err)
-			}
-		} else {
-			log.Println(err)
+		cnt++
+		if cnt%3 == 1 {
+			json.Unmarshal(line, &docs)
+			allDocs = append(allDocs, docs...)
+		} else if cnt%3 == 2 { // serverInfo
+			json.Unmarshal(line, &repls)
+			allRepls = append(allRepls, repls...)
+		} else if cnt == 3 { // serverInfo
+			d.ServerInfo = bson.M{}
+			json.Unmarshal(line, &d.ServerInfo)
 		}
 	}
 
@@ -311,7 +304,7 @@ func (d *DiagnosticData) analyzeServerStatus(filename string) error {
 	}
 
 	d.ServerStatusList = append(d.ServerStatusList, allDocs...)
-	if len(d.ServerStatusList) > 0 { // shortcut hack
+	if cnt < 3 && len(d.ServerStatusList) > 0 { // shortcut hack
 		d.ServerInfo = bson.M{"BuildInfo": bson.M{"Version": d.ServerStatusList[0].Version}}
 	}
 	d.ReplSetStatusList = append(d.ReplSetStatusList, allRepls...)
