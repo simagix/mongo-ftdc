@@ -270,19 +270,13 @@ func (d *DiagnosticData) readDiagnosticFile(filename string) (DiagnosticData, er
 // analyzeServerStatus -
 func (d *DiagnosticData) analyzeServerStatus(filename string) error {
 	var err error
-	var file *os.File
 	var reader *bufio.Reader
 	var allDocs = []ServerStatusDoc{}
 	var docs = []ServerStatusDoc{}
 	var allRepls = []ReplSetStatusDoc{}
 	var repls = []ReplSetStatusDoc{}
 
-	if file, err = os.Open(filename); err != nil {
-		return err
-	}
-	defer file.Close()
-
-	if reader, err = gox.NewReader(file); err != nil {
+	if reader, err = gox.NewFileReader(filename); err != nil {
 		return err
 	}
 
@@ -293,10 +287,10 @@ func (d *DiagnosticData) analyzeServerStatus(filename string) error {
 			break
 		}
 		cnt++
-		if cnt == 1 {
+		if cnt%3 == 1 {
 			json.Unmarshal(line, &docs)
 			allDocs = append(allDocs, docs...)
-		} else if cnt == 2 { // serverInfo
+		} else if cnt%3 == 2 { // serverInfo
 			json.Unmarshal(line, &repls)
 			allRepls = append(allRepls, repls...)
 		} else if cnt == 3 { // serverInfo
