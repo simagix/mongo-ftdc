@@ -174,9 +174,9 @@ func (d *DiagnosticData) readDiagnosticFiles(filenames []string) error {
 	btime := time.Now()
 	log.Printf("reading %d files with %d second(s) interval\n", len(filenames), d.span)
 	var diagDataMap = map[string]DiagnosticData{}
-	nThreads := runtime.NumCPU()
-	if nThreads < 4 {
-		nThreads = 4
+	nThreads := runtime.NumCPU() - 1
+	if nThreads < 1 {
+		nThreads = 1
 	}
 	var wg = gox.NewWaitGroup(nThreads) // use 4 threads to read
 	for threadNum := 0; threadNum < len(filenames); threadNum++ {
@@ -247,8 +247,6 @@ func (d *DiagnosticData) readDiagnosticFile(filename string) (DiagnosticData, er
 			var doc DiagnosticDoc
 			bson.Unmarshal(block[:v.DocSize], &doc) // first document
 			diagData.ReplSetStatusList = append(diagData.ReplSetStatusList, doc.ReplSetGetStatus)
-		}
-		for _, v := range metrics.Data {
 			for i := uint32(0); i < v.NumDeltas; i += uint32(d.span) {
 				ss := getServerStatusDataPoints(v.DataPointsMap, i)
 				diagData.ServerStatusList = append(diagData.ServerStatusList, ss)
@@ -263,7 +261,10 @@ func (d *DiagnosticData) readDiagnosticFile(filename string) (DiagnosticData, er
 	if i >= 0 {
 		filename = filename[i+1:]
 	}
-	log.Println(filename, "blocks:", len(metrics.Data), ", time:", time.Now().Sub(btm))
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	mem := fmt.Sprintf("Memory Alloc = %v MiB, TotalAlloc = %v MiB", m.Alloc/(1024*1024), m.TotalAlloc/(1024*1024))
+	log.Println(filename, "blocks:", len(metrics.Data), ", time:", time.Now().Sub(btm), mem)
 	return diagData, err
 }
 

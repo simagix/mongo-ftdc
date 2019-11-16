@@ -17,14 +17,6 @@ func TestGetDataPoint(t *testing.T) {
 	t.Log(dp)
 }
 
-func TestSetFTDCSummaryStats(t *testing.T) {
-	d := NewDiagnosticData(300)
-	var filenames = []string{DiagnosticDataFilename}
-	m := NewMetrics(filenames)
-	d.DecodeDiagnosticData(filenames)
-	m.SetFTDCSummaryStats(d)
-}
-
 func TestInitServerStatusTimeSeriesDoc(t *testing.T) {
 	d := NewDiagnosticData(300)
 	var filenames = []string{DiagnosticDataFilename}
