@@ -27,8 +27,7 @@ import (
 // Metrics stores metrics from FTDC data
 type Metrics struct {
 	sync.RWMutex
-	summaryFTDC FTDCStats
-	detailFTDC  FTDCStats
+	ftdcStats   FTDCStats
 	filenames   []string
 	isProcessed bool
 	outputOnly  bool
@@ -86,11 +85,11 @@ func (m *Metrics) readProcessedFTDC(infile string) error {
 	}
 	buffer := bytes.NewBuffer(data)
 	dec := gob.NewDecoder(buffer)
-	if err = dec.Decode(&m.detailFTDC); err != nil {
+	if err = dec.Decode(&m.ftdcStats); err != nil {
 		return err
 	}
 
-	points := m.detailFTDC.TimeSeriesData["wt_cache_used"].DataPoints
+	points := m.ftdcStats.TimeSeriesData["wt_cache_used"].DataPoints
 	tm1 := time.Unix(0, int64(points[0][1])*int64(time.Millisecond)).Unix() * 1000
 	tm2 := time.Unix(0, int64(points[len(points)-1][1])*int64(time.Millisecond)).Unix() * 1000
 	log.Println(tm1, tm2)
@@ -108,15 +107,21 @@ func (m *Metrics) parse() string {
 		return diag.endpoint
 	}
 	diag := decode(m.filenames, 300)
-	m.SetFTDCSummaryStats(diag)
+	hostname, _ := os.Hostname()
+	port := 3000
+	span := 1
+	if hostname == "ftdc" { // from docker-compose
+		port = 3030
+		span = len(m.filenames)/4 + 1
+	}
+	uri := fmt.Sprintf("http://localhost:%d%v", port, diag.endpoint)
 	m.SetFTDCDetailStats(diag)
-	go func(filenames []string) {
-		diag := decode(filenames, 1)
+	log.Println(uri)
+	go func(filenames []string, span int) {
+		diag := decode(m.filenames, span)
 		m.SetFTDCDetailStats(diag)
-		endpoint := diag.GetEndPoint()
-		log.Printf("http://localhost:3000%v\n", endpoint)
-		log.Printf("http://localhost:3030%v\n", endpoint)
-	}(m.filenames)
+		log.Println(uri)
+	}(m.filenames, span)
 	return diag.endpoint
 }
 
@@ -132,7 +137,7 @@ func decode(filenames []string, span int) *DiagnosticData {
 func (m *Metrics) outputProcessedFTDC() {
 	var data bytes.Buffer
 	enc := gob.NewEncoder(&data)
-	if err := enc.Encode(m.detailFTDC); err != nil {
+	if err := enc.Encode(m.ftdcStats); err != nil {
 		log.Println("encode error:", err)
 	}
 	ofile := filepath.Base(m.filenames[0]) + ".ftdc-enc.gz"
@@ -177,18 +182,11 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// SetFTDCSummaryStats populate FTDC summary, 5 minutes span
-func (m *Metrics) SetFTDCSummaryStats(diag *DiagnosticData) {
-	m.RLock()
-	defer m.RUnlock()
-	setFTDCStats(diag, &m.summaryFTDC)
-}
-
 // SetFTDCDetailStats populate FTDC details, 1 second span
 func (m *Metrics) SetFTDCDetailStats(diag *DiagnosticData) {
 	m.RLock()
 	defer m.RUnlock()
-	setFTDCStats(diag, &m.detailFTDC)
+	setFTDCStats(diag, &m.ftdcStats)
 }
 
 type directoryReq struct {
@@ -219,7 +217,7 @@ func (m *Metrics) readDirectory(w http.ResponseWriter, r *http.Request) {
 
 func (m *Metrics) search(w http.ResponseWriter, r *http.Request) {
 	var list []string
-	for _, doc := range m.summaryFTDC.TimeSeriesData {
+	for _, doc := range m.ftdcStats.TimeSeriesData {
 		list = append(list, doc.Target)
 	}
 
@@ -233,7 +231,7 @@ func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
 	if err := decoder.Decode(&qr); err != nil {
 		return
 	}
-	ftdc := m.detailFTDC
+	ftdc := m.ftdcStats
 	var tsData []interface{}
 	for _, target := range qr.Targets {
 		if target.Type == "timeserie" {
