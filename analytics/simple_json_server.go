@@ -15,6 +15,7 @@ import (
 func SingleJSONServer(filenames []string) {
 	metrics := NewMetrics(filenames)
 	metrics.Read()
+	http.HandleFunc("/", gox.Cors(metrics.Handler))
 	http.HandleFunc("/grafana", gox.Cors(metrics.Handler))
 	http.HandleFunc("/grafana/", gox.Cors(metrics.Handler))
 	hostname, _ := os.Hostname()
