@@ -16,3 +16,7 @@ services:
     volumes:
       - ./diagnostic.data:/diagnostic.data
     command: /simple_json /diagnostic.data
+    deploy:
+      resources:
+        limits:
+          memory: 1G
