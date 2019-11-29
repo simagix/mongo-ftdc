@@ -22,6 +22,8 @@ import (
 	"github.com/simagix/gox"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 )
 
 // Metrics stores metrics from FTDC data
@@ -57,9 +59,12 @@ func (m *Metrics) SetOutputOnly(outputOnly bool) {
 
 // Read reads metrics files/data
 func (m *Metrics) Read() {
-	infile := m.filenames[0]
+	if len(m.filenames) == 0 {
+		log.Println("No available data files found.")
+		return
+	}
 	if m.isProcessed == true {
-		if err := m.readProcessedFTDC(infile); err != nil {
+		if err := m.readProcessedFTDC(m.filenames[0]); err != nil {
 			log.Println(err)
 		}
 	} else {
@@ -171,14 +176,14 @@ func getFilenames(filenames []string) []string {
 
 // Handler handle HTTP requests
 func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path[1:] == "grafana/" {
-		fmt.Fprintf(w, "ok\n")
-	} else if r.URL.Path[1:] == "grafana/query" {
+	if r.URL.Path[1:] == "grafana/query" {
 		m.query(w, r)
 	} else if r.URL.Path[1:] == "grafana/search" {
 		m.search(w, r)
 	} else if r.URL.Path[1:] == "grafana/dir" {
 		m.readDirectory(w, r)
+	} else {
+		json.NewEncoder(w).Encode(bson.M{"ok": 1, "message": "hello keyhole!"})
 	}
 }
 
@@ -273,7 +278,8 @@ func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
 
 				rowList = append(rowList, []string{"CPU", strconv.Itoa(si.HostInfo.System.NumCores) + " cores (" + si.HostInfo.System.CPUArch + ")"})
 				// rowList = append(rowList, []string{"Hostname", si.HostInfo.System.Hostname})
-				rowList = append(rowList, []string{"Memory (MB)", strconv.Itoa(si.HostInfo.System.MemSizeMB)})
+				p := message.NewPrinter(language.English)
+				rowList = append(rowList, []string{"Memory (MB)", p.Sprintf("%d", si.HostInfo.System.MemSizeMB)})
 				rowList = append(rowList, []string{"MongoDB Version", si.BuildInfo.Version})
 				rowList = append(rowList, []string{"OS", si.HostInfo.OS.Name})
 				rowList = append(rowList, []string{"OS Type", si.HostInfo.OS.Type + " (" + si.HostInfo.OS.Version + ")"})
