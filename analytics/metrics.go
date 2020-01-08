@@ -111,22 +111,17 @@ func (m *Metrics) parse() string {
 		m.outputProcessedFTDC()
 		return diag.endpoint
 	}
-	diag := decode(m.filenames, 300)
 	hostname, _ := os.Hostname()
 	port := 3000
 	span := 1
 	if hostname == "ftdc" { // from docker-compose
 		port = 3030
-		span = len(m.filenames)/4 + 1
+		span = (len(m.filenames)-1)/5 + 1
 	}
+	diag := decode(m.filenames, span)
 	uri := fmt.Sprintf("http://localhost:%d%v", port, diag.endpoint)
 	m.SetFTDCDetailStats(diag)
 	log.Println(uri)
-	go func(filenames []string, span int) {
-		diag := decode(m.filenames, span)
-		m.SetFTDCDetailStats(diag)
-		log.Println(uri)
-	}(m.filenames, span)
 	return diag.endpoint
 }
 
