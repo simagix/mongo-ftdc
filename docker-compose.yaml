@@ -3,7 +3,7 @@ version: "3"
 
 services:
   grafana-ftdc:
-    image: simagix/grafana-ftdc:0.7.1
+    image: simagix/grafana-ftdc
     hostname: grafana-ftdc
     ports:
       - "3030:3000"
@@ -11,7 +11,7 @@ services:
       GF_INSTALL_PLUGINS: grafana-simple-json-datasource
 
   ftdc:
-    image: simagix/ftdc:0.7.1
+    image: simagix/ftdc:0.8.0
     hostname: ftdc
     volumes:
       - ./diagnostic.data:/diagnostic.data
@@ -19,4 +19,5 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          cpus: '4'
+          memory: 512M
