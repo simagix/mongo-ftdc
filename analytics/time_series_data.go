@@ -56,7 +56,7 @@ var wiredTigerChartsLegends = []string{
 }
 var systemMetricsChartsLegends = []string{
 	"cpu_idle", "cpu_iowait", "cpu_nice", "cpu_softirq", "cpu_steal", "cpu_system", "cpu_user",
-	"disks_utils", "disks_iops"}
+	"disks_utils", "disks_iops", "io_in_progress"}
 var replSetChartsLegends = []string{"replication_lags"}
 
 // Grafana simple json data store
@@ -77,8 +77,9 @@ type FTDCStats struct {
 
 // DiskStats -
 type DiskStats struct {
-	Utilization TimeSeriesDoc
-	IOPS        TimeSeriesDoc
+	Utilization  TimeSeriesDoc
+	IOPS         TimeSeriesDoc
+	IOInProgress TimeSeriesDoc
 }
 
 // setFTDCStats -
@@ -233,10 +234,12 @@ func initSystemMetricsTimeSeriesDoc(systemMetricsList []SystemMetricsDoc) (map[s
 					continue
 				}
 				iops := float64(disk.Reads+disk.Writes-(pstat.Disks[k].Reads+pstat.Disks[k].Writes)) / float64(stat.Start.Sub(pstat.Start).Seconds())
+				qlen := float64(disk.IOInProgress)
 
 				x := diskStats[k]
 				x.Utilization.DataPoints = append(x.Utilization.DataPoints, getDataPoint(u, t))
 				x.IOPS.DataPoints = append(x.IOPS.DataPoints, getDataPoint(iops, t))
+				x.IOInProgress.DataPoints = append(x.IOInProgress.DataPoints, getDataPoint(qlen, t))
 				diskStats[k] = x
 			}
 

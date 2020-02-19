@@ -15,7 +15,6 @@ func main() {
 	filenames := append([]string{}, flag.Args()...)
 	if *output == true {
 		metrics := analytics.NewMetrics(filenames)
-		metrics.SetOutputOnly(true)
 		metrics.Read()
 		os.Exit(0)
 	}

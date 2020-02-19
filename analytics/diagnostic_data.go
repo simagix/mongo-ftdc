@@ -56,30 +56,29 @@ func getServerStatusDataPoints(attribsMap map[string][]int64, i uint32) ServerSt
 }
 
 func getSystemMetricsDataPoints(attribsMap map[string][]int64, i uint32) SystemMetricsDoc {
-	sm := SystemMetricsDoc{}
+	sm := SystemMetricsDoc{Disks: map[string]DiskMetrics{}}
 	sm.Start = time.Unix(0, int64(time.Millisecond)*attribsMap["serverStatus/localTime"][i])
-	if attribsMap["systemMetrics/cpu/idle_ms"] == nil { // system metrics only available from Linux
-		return sm
+	if attribsMap["systemMetrics/cpu/idle_ms"] != nil { // system metrics only available from Linux
+		sm.CPU.IdleMS = attribsMap["systemMetrics/cpu/idle_ms"][i]
+		sm.CPU.UserMS = attribsMap["systemMetrics/cpu/user_ms"][i]
+		sm.CPU.IOWaitMS = attribsMap["systemMetrics/cpu/iowait_ms"][i]
+		sm.CPU.NiceMS = attribsMap["systemMetrics/cpu/nice_ms"][i]
+		sm.CPU.SoftirqMS = attribsMap["systemMetrics/cpu/softirq_ms"][i]
+		sm.CPU.StealMS = attribsMap["systemMetrics/cpu/steal_ms"][i]
+		sm.CPU.SystemMS = attribsMap["systemMetrics/cpu/system_ms"][i]
 	}
-	sm.CPU.IdleMS = attribsMap["systemMetrics/cpu/idle_ms"][i]
-	sm.CPU.UserMS = attribsMap["systemMetrics/cpu/user_ms"][i]
-	sm.CPU.IOWaitMS = attribsMap["systemMetrics/cpu/iowait_ms"][i]
-	sm.CPU.NiceMS = attribsMap["systemMetrics/cpu/nice_ms"][i]
-	sm.CPU.SoftirqMS = attribsMap["systemMetrics/cpu/softirq_ms"][i]
-	sm.CPU.StealMS = attribsMap["systemMetrics/cpu/steal_ms"][i]
-	sm.CPU.SystemMS = attribsMap["systemMetrics/cpu/system_ms"][i]
-
-	diskMap := map[string]DiskMetrics{}
 	for key := range attribsMap {
 		if strings.Index(key, "systemMetrics/disks/") != 0 {
 			continue
 		}
 		tokens := strings.Split(key, ftdc.PathSeparator)
-		if _, ok := diskMap[tokens[2]]; !ok {
-			diskMap[tokens[2]] = DiskMetrics{}
+		disk := tokens[2]
+		stats := tokens[3]
+		if _, ok := sm.Disks[disk]; !ok {
+			sm.Disks[disk] = DiskMetrics{}
 		}
-		m := diskMap[tokens[2]]
-		switch tokens[3] {
+		m := sm.Disks[disk]
+		switch stats {
 		case "read_time_ms":
 			m.ReadTimeMS = attribsMap[key][i]
 		case "write_time_ms":
@@ -92,9 +91,10 @@ func getSystemMetricsDataPoints(attribsMap map[string][]int64, i uint32) SystemM
 			m.Reads = attribsMap[key][i]
 		case "writes":
 			m.Writes = attribsMap[key][i]
+		case "io_in_progress":
+			m.IOInProgress = attribsMap[key][i]
 		}
-		diskMap[tokens[2]] = m
+		sm.Disks[disk] = m
 	}
-	sm.Disks = diskMap
 	return sm
 }

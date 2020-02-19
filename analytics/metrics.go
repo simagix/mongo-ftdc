@@ -13,7 +13,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,10 +28,8 @@ import (
 // Metrics stores metrics from FTDC data
 type Metrics struct {
 	sync.RWMutex
-	ftdcStats   FTDCStats
-	filenames   []string
-	isProcessed bool
-	outputOnly  bool
+	ftdcStats FTDCStats
+	filenames []string
 }
 
 // NewMetrics returns &Metrics
@@ -41,20 +38,11 @@ func NewMetrics(filenames []string) *Metrics {
 	gob.Register(primitive.A{})
 	gob.Register(primitive.D{})
 	gob.Register(primitive.M{})
-	metrics := &Metrics{filenames: getFilenames(filenames), isProcessed: false}
+	metrics := &Metrics{filenames: getFilenames(filenames)}
 	if len(metrics.filenames) == 0 {
 		return metrics
 	}
-	infile := filenames[0]
-	if len(filenames) == 1 && strings.HasSuffix(infile, ".ftdc-enc.gz") {
-		metrics.isProcessed = true
-	}
 	return metrics
-}
-
-// SetOutputOnly set output flag to process FTDC in foreground
-func (m *Metrics) SetOutputOnly(outputOnly bool) {
-	m.outputOnly = outputOnly
 }
 
 // Read reads metrics files/data
@@ -63,13 +51,7 @@ func (m *Metrics) Read() {
 		log.Println("No available data files found.")
 		return
 	}
-	if m.isProcessed == true {
-		if err := m.readProcessedFTDC(m.filenames[0]); err != nil {
-			log.Println(err)
-		}
-	} else {
-		m.parse()
-	}
+	m.parse()
 }
 
 func (m *Metrics) readProcessedFTDC(infile string) error {
@@ -105,12 +87,6 @@ func (m *Metrics) readProcessedFTDC(infile string) error {
 }
 
 func (m *Metrics) parse() string {
-	if m.outputOnly == true {
-		diag := decode(m.filenames, 1)
-		m.SetFTDCDetailStats(diag)
-		m.outputProcessedFTDC()
-		return diag.endpoint
-	}
 	hostname, _ := os.Hostname()
 	port := 3000
 	span := 1
@@ -131,18 +107,6 @@ func decode(filenames []string, span int) *DiagnosticData {
 		log.Fatal(err)
 	}
 	return diag
-}
-
-// outputProcessedFTDC outputs processed FTDC data
-func (m *Metrics) outputProcessedFTDC() {
-	var data bytes.Buffer
-	enc := gob.NewEncoder(&data)
-	if err := enc.Encode(m.ftdcStats); err != nil {
-		log.Println("encode error:", err)
-	}
-	ofile := filepath.Base(m.filenames[0]) + ".ftdc-enc.gz"
-	gox.OutputGzipped(data.Bytes(), ofile)
-	log.Println("FTDC metadata written to", ofile)
 }
 
 func getFilenames(filenames []string) []string {
@@ -250,6 +214,12 @@ func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
 			} else if target.Target == "disks_iops" {
 				for k, v := range ftdc.DiskStats {
 					data := v.IOPS
+					data.Target = k
+					tsData = append(tsData, filterTimeSeriesData(data, qr.Range.From, qr.Range.To))
+				}
+			} else if target.Target == "disks_queue_length" {
+				for k, v := range ftdc.DiskStats {
+					data := v.IOInProgress
 					data.Target = k
 					tsData = append(tsData, filterTimeSeriesData(data, qr.Range.From, qr.Range.To))
 				}
