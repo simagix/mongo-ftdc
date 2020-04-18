@@ -13,8 +13,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -28,30 +28,76 @@ import (
 // Metrics stores metrics from FTDC data
 type Metrics struct {
 	sync.RWMutex
+	endpoint  string
 	ftdcStats FTDCStats
-	filenames []string
+	verbose   bool
+}
+
+// FTDCStats FTDC stats
+type FTDCStats struct {
+	DiskStats         map[string]DiskStats
+	ReplicationLags   map[string]TimeSeriesDoc
+	ReplSetLegends    []string
+	ReplSetStatusList []ReplSetStatusDoc
+	ServerInfo        interface{}
+	ServerStatusList  []ServerStatusDoc
+	SystemMetricsList []SystemMetricsDoc
+	TimeSeriesData    map[string]TimeSeriesDoc
+}
+
+// DiskStats -
+type DiskStats struct {
+	Utilization  TimeSeriesDoc
+	IOPS         TimeSeriesDoc
+	IOInProgress TimeSeriesDoc
+}
+
+type directoryReq struct {
+	Dir  string `json:"dir"`
+	Span int    `json:"span"`
 }
 
 // NewMetrics returns &Metrics
-func NewMetrics(filenames []string) *Metrics {
+func NewMetrics() *Metrics {
 	gob.Register(primitive.DateTime(1))
 	gob.Register(primitive.A{})
 	gob.Register(primitive.D{})
 	gob.Register(primitive.M{})
-	metrics := &Metrics{filenames: getFilenames(filenames)}
-	if len(metrics.filenames) == 0 {
-		return metrics
-	}
-	return metrics
+	m := Metrics{}
+	http.HandleFunc("/grafana", gox.Cors(m.Handler))
+	http.HandleFunc("/grafana/", gox.Cors(m.Handler))
+	return &m
 }
 
-// Read reads metrics files/data
-func (m *Metrics) Read() {
-	if len(m.filenames) == 0 {
-		log.Println("No available data files found.")
-		return
+const endpointTemplate = `/d/simagix-grafana/mongodb-mongo-ftdc?orgId=1&from=%v&to=%v`
+
+// SetVerbose sets verbose mode
+func (m *Metrics) SetVerbose(verbose bool) { m.verbose = verbose }
+
+// ProcessFiles reads metrics files/data
+func (m *Metrics) ProcessFiles(filenames []string) error {
+	hostname, _ := os.Hostname()
+	port := 3000
+	span := 1
+	if len(filenames) == 0 {
+		t := time.Now().Unix() * 1000
+		minute := int64(60) * 1000
+		endpoint := fmt.Sprintf(endpointTemplate, t, t+(10*minute))
+		log.Println(fmt.Sprintf("http://localhost:%d%v", port, endpoint))
+		return errors.New("no available data files found")
 	}
-	m.parse()
+	if hostname == "ftdc" { // from docker-compose
+		port = 3030
+		span = (len(filenames)-1)/5 + 1
+	}
+	diag := NewDiagnosticData(span)
+	if err := diag.DecodeDiagnosticData(filenames); err != nil { // get summary
+		return err
+	}
+	m.endpoint = diag.endpoint
+	m.AddFTDCDetailStats(diag)
+	log.Println(fmt.Sprintf("http://localhost:%d%v", port, diag.endpoint))
+	return nil
 }
 
 func (m *Metrics) readProcessedFTDC(infile string) error {
@@ -80,57 +126,10 @@ func (m *Metrics) readProcessedFTDC(infile string) error {
 	tm1 := time.Unix(0, int64(points[0][1])*int64(time.Millisecond)).Unix() * 1000
 	tm2 := time.Unix(0, int64(points[len(points)-1][1])*int64(time.Millisecond)).Unix() * 1000
 	log.Println(tm1, tm2)
-	endpoint := fmt.Sprintf("/d/simagix-grafana/mongodb-mongo-ftdc?orgId=1&from=%v&to=%v", tm1, tm2)
+	endpoint := fmt.Sprintf(endpointTemplate, tm1, tm2)
 	log.Printf("http://localhost:3000%v\n", endpoint)
 	log.Printf("http://localhost:3030%v\n", endpoint)
 	return err
-}
-
-func (m *Metrics) parse() string {
-	hostname, _ := os.Hostname()
-	port := 3000
-	span := 1
-	if hostname == "ftdc" { // from docker-compose
-		port = 3030
-		span = (len(m.filenames)-1)/5 + 1
-	}
-	diag := decode(m.filenames, span)
-	uri := fmt.Sprintf("http://localhost:%d%v", port, diag.endpoint)
-	m.SetFTDCDetailStats(diag)
-	log.Println(uri)
-	return diag.endpoint
-}
-
-func decode(filenames []string, span int) *DiagnosticData {
-	diag := NewDiagnosticData(span)
-	if err := diag.DecodeDiagnosticData(filenames); err != nil { // get summary
-		log.Fatal(err)
-	}
-	return diag
-}
-
-func getFilenames(filenames []string) []string {
-	var err error
-	var fi os.FileInfo
-	fnames := []string{}
-	for _, filename := range filenames {
-		if fi, err = os.Stat(filename); err != nil {
-			continue
-		}
-		switch mode := fi.Mode(); {
-		case mode.IsDir():
-			files, _ := ioutil.ReadDir(filename)
-			for _, file := range files {
-				if file.IsDir() == false &&
-					(strings.HasPrefix(file.Name(), "metrics.") || strings.HasPrefix(file.Name(), "keyhole_stats.")) {
-					fnames = append(fnames, filename+"/"+file.Name())
-				}
-			}
-		case mode.IsRegular():
-			fnames = append(fnames, filename)
-		}
-	}
-	return fnames
 }
 
 // Handler handle HTTP requests
@@ -142,37 +141,26 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	} else if r.URL.Path[1:] == "grafana/dir" {
 		m.readDirectory(w, r)
 	} else {
-		json.NewEncoder(w).Encode(bson.M{"ok": 1, "message": "hello keyhole!"})
+		json.NewEncoder(w).Encode(bson.M{"ok": 1, "message": "hello ftdc!"})
 	}
-}
-
-// SetFTDCDetailStats populate FTDC details, 1 second span
-func (m *Metrics) SetFTDCDetailStats(diag *DiagnosticData) {
-	m.RLock()
-	defer m.RUnlock()
-	setFTDCStats(diag, &m.ftdcStats)
-}
-
-type directoryReq struct {
-	Dir  string `json:"dir"`
-	Span int    `json:"span"`
 }
 
 func (m *Metrics) readDirectory(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodOptions:
 	case http.MethodPost:
-		var err error
 		decoder := json.NewDecoder(r.Body)
 		var dr directoryReq
-		if err = decoder.Decode(&dr); err != nil {
+		if err := decoder.Decode(&dr); err != nil {
 			json.NewEncoder(w).Encode(bson.M{"ok": 0, "err": err.Error()})
 			return
 		}
-		m.filenames = getFilenames([]string{dr.Dir})
-		ep := m.parse()
-		json.NewEncoder(w).Encode(bson.M{"ok": 1, "endpoint": ep})
-
+		filenames := getFilenames([]string{dr.Dir})
+		if err := m.ProcessFiles(filenames); err != nil {
+			json.NewEncoder(w).Encode(bson.M{"ok": 0, "err": err.Error()})
+		} else {
+			json.NewEncoder(w).Encode(bson.M{"ok": 1, "endpoint": m.endpoint})
+		}
 	default:
 		http.Error(w, "bad method; supported OPTIONS, POST", http.StatusBadRequest)
 		return
@@ -256,30 +244,94 @@ func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(tsData)
 }
 
-func parseTime(filename string) (time.Time, error) {
-	layout := "2006-01-02T15-04-05Z"
-	x := strings.Index(filename, "metrics.")
-	y := strings.LastIndex(filename, "-")
-	if x < 0 || y < 0 || y < x {
-		return time.Now(), errors.New("not valid")
-	}
-	t, err := time.Parse(layout, filename[x+8:y])
-	if err != nil {
-		return time.Now(), err
-	}
-	return t, nil
-}
-
-func filterTimeSeriesData(tsData TimeSeriesDoc, from time.Time, to time.Time) TimeSeriesDoc {
-	var data = TimeSeriesDoc{DataPoints: [][]float64{}}
-	hours := int(to.Sub(from).Hours()) + 1
-	data.Target = tsData.Target
-	for i, v := range tsData.DataPoints {
-		tm := time.Unix(0, int64(v[1])*int64(time.Millisecond))
-		if (i%hours) != 0 || tm.After(to) || tm.Before(from) {
-			continue
+// AddFTDCDetailStats assign FTDC values
+func (m *Metrics) AddFTDCDetailStats(diag *DiagnosticData) {
+	m.RLock()
+	defer m.RUnlock()
+	ftdc := &m.ftdcStats
+	if len(ftdc.ReplSetStatusList) == 0 {
+		ftdc.ReplSetStatusList = diag.ReplSetStatusList
+	} else {
+		lastOne := ftdc.ReplSetStatusList[len(ftdc.ReplSetStatusList)-1]
+		for _, v := range diag.ReplSetStatusList {
+			if v.Date.After(lastOne.Date) {
+				ftdc.ReplSetStatusList = append(ftdc.ReplSetStatusList, v)
+			}
 		}
-		data.DataPoints = append(data.DataPoints, v)
 	}
-	return data
+	sort.Slice(ftdc.ReplSetStatusList, func(i int, j int) bool {
+		return ftdc.ReplSetStatusList[i].Date.Before(ftdc.ReplSetStatusList[j].Date)
+	})
+	if len(ftdc.ServerStatusList) == 0 {
+		ftdc.ServerStatusList = diag.ServerStatusList
+	} else {
+		lastOne := ftdc.ServerStatusList[len(ftdc.ServerStatusList)-1]
+		for _, v := range diag.ServerStatusList {
+			if v.LocalTime.After(lastOne.LocalTime) {
+				ftdc.ServerStatusList = append(ftdc.ServerStatusList, v)
+			}
+		}
+	}
+	sort.Slice(ftdc.ServerStatusList, func(i int, j int) bool {
+		return ftdc.ServerStatusList[i].LocalTime.Before(ftdc.ServerStatusList[j].LocalTime)
+	})
+	if len(ftdc.SystemMetricsList) == 0 {
+		ftdc.SystemMetricsList = diag.SystemMetricsList
+	} else {
+		lastOne := ftdc.SystemMetricsList[len(ftdc.SystemMetricsList)-1]
+		for _, v := range diag.SystemMetricsList {
+			if v.Start.After(lastOne.Start) {
+				ftdc.SystemMetricsList = append(ftdc.SystemMetricsList, v)
+			}
+		}
+	}
+	sort.Slice(ftdc.SystemMetricsList, func(i int, j int) bool {
+		return ftdc.SystemMetricsList[i].Start.Before(ftdc.SystemMetricsList[j].Start)
+	})
+	ftdc.ServerInfo = diag.ServerInfo
+	btm := time.Now()
+	var wiredTigerTSD map[string]TimeSeriesDoc
+	var replicationTSD map[string]TimeSeriesDoc
+	var systemMetricsTSD map[string]TimeSeriesDoc
+
+	var wg = gox.NewWaitGroup(4) // use 4 threads to read
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		replicationTSD, ftdc.ReplicationLags = getReplSetGetStatusTimeSeriesDoc(ftdc.ReplSetStatusList, &ftdc.ReplSetLegends) // replSetGetStatus
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		systemMetricsTSD, ftdc.DiskStats = getSystemMetricsTimeSeriesDoc(ftdc.SystemMetricsList) // SystemMetrics
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ftdc.TimeSeriesData = getServerStatusTimeSeriesDoc(ftdc.ServerStatusList) // ServerStatus
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		wiredTigerTSD = getWiredTigerTimeSeriesDoc(ftdc.ServerStatusList) // ServerStatus
+	}()
+	wg.Wait()
+
+	// merge
+	for k, v := range wiredTigerTSD {
+		ftdc.TimeSeriesData[k] = v
+	}
+	for k, v := range replicationTSD {
+		ftdc.TimeSeriesData[k] = v
+	}
+	for k, v := range systemMetricsTSD {
+		ftdc.TimeSeriesData[k] = v
+	}
+	etm := time.Now()
+	var doc ServerInfoDoc
+	b, _ := json.Marshal(ftdc.ServerInfo)
+	json.Unmarshal(b, &doc)
+	if m.verbose == true {
+		log.Println("data points added for", doc.HostInfo.System.Hostname, ", time spent:", etm.Sub(btm).String())
+	}
 }

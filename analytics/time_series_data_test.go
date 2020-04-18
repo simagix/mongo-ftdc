@@ -17,42 +17,50 @@ func TestGetDataPoint(t *testing.T) {
 	t.Log(dp)
 }
 
-func TestInitServerStatusTimeSeriesDoc(t *testing.T) {
+func TestGetServerStatusTimeSeriesDoc(t *testing.T) {
 	d := NewDiagnosticData(300)
 	var filenames = []string{DiagnosticDataFilename}
 	d.DecodeDiagnosticData(filenames)
-	tsd := initServerStatusTimeSeriesDoc(d.ServerStatusList)
+	tsd := getServerStatusTimeSeriesDoc(d.ServerStatusList)
 	if len(tsd) == 0 {
 		t.Fatal()
 	}
 }
 
-func TestInitSystemMetricsTimeSeriesDoca(t *testing.T) {
+func TestGetSystemMetricsTimeSeriesDoca(t *testing.T) {
 	d := NewDiagnosticData(300)
 	var filenames = []string{DiagnosticDataFilename}
 	d.DecodeDiagnosticData(filenames)
-	tsd, _ := initSystemMetricsTimeSeriesDoc(d.SystemMetricsList)
+	tsd, _ := getSystemMetricsTimeSeriesDoc(d.SystemMetricsList)
 	if len(tsd) == 0 {
 		t.Fatal()
 	}
 }
 
-func TestInitReplSetGetStatusTimeSeriesDoc(t *testing.T) {
+func TestGetReplSetGetStatusTimeSeriesDoc(t *testing.T) {
 	d := NewDiagnosticData(300)
 	var filenames = []string{DiagnosticDataFilename}
 	d.DecodeDiagnosticData(filenames)
-	tsd, _ := initReplSetGetStatusTimeSeriesDoc(d.ReplSetStatusList)
+	tsd, _ := getReplSetGetStatusTimeSeriesDoc(d.ReplSetStatusList, &[]string{})
 	if len(tsd) == 0 {
 		t.Fatal()
 	}
 }
 
-func TestInitWiredTigerTimeSeriesDoc(t *testing.T) {
+func TestGetWiredTigerTimeSeriesDoc(t *testing.T) {
 	d := NewDiagnosticData(300)
 	var filenames = []string{DiagnosticDataFilename}
 	d.DecodeDiagnosticData(filenames)
-	tsd := initWiredTigerTimeSeriesDoc(d.ServerStatusList)
+	tsd := getWiredTigerTimeSeriesDoc(d.ServerStatusList)
 	if len(tsd) == 0 {
 		t.Fatal()
 	}
+}
+
+func TestAddFTDCDetailStats(t *testing.T) {
+	filenames := []string{"testdata/diagnostic.data/metrics.2018-10-07T15-15-22Z-00000"}
+	metrics := NewMetrics()
+	diag := NewDiagnosticData(1)
+	diag.DecodeDiagnosticData(filenames)
+	metrics.AddFTDCDetailStats(diag)
 }

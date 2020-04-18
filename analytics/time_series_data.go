@@ -3,16 +3,12 @@
 package analytics
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
-
-	"github.com/simagix/gox"
 )
 
 // TimeSeriesDoc -
@@ -59,83 +55,6 @@ var systemMetricsChartsLegends = []string{
 	"disks_utils", "disks_iops", "io_in_progress"}
 var replSetChartsLegends = []string{"replication_lags"}
 
-// Grafana simple json data store
-// grafana-cli plugins install grafana-simple-json-datasource
-type Grafana struct {
-	sync.RWMutex
-	summaryFTDC FTDCStats
-	detailFTDC  FTDCStats
-}
-
-// FTDCStats FTDC stats
-type FTDCStats struct {
-	ServerInfo      interface{}
-	TimeSeriesData  map[string]TimeSeriesDoc
-	ReplicationLags map[string]TimeSeriesDoc
-	DiskStats       map[string]DiskStats
-}
-
-// DiskStats -
-type DiskStats struct {
-	Utilization  TimeSeriesDoc
-	IOPS         TimeSeriesDoc
-	IOInProgress TimeSeriesDoc
-}
-
-// setFTDCStats -
-func setFTDCStats(diag *DiagnosticData, ftdc *FTDCStats) {
-	ftdc.ServerInfo = diag.ServerInfo
-	btm := time.Now()
-	var serverStatusTSD map[string]TimeSeriesDoc
-	var wiredTigerTSD map[string]TimeSeriesDoc
-	var replicationTSD map[string]TimeSeriesDoc
-	var systemMetricsTSD map[string]TimeSeriesDoc
-	var replicationLags map[string]TimeSeriesDoc
-	var diskStats map[string]DiskStats
-
-	var wg = gox.NewWaitGroup(4) // use 4 threads to read
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		replicationTSD, replicationLags = initReplSetGetStatusTimeSeriesDoc(diag.ReplSetStatusList) // replSetGetStatus
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		systemMetricsTSD, diskStats = initSystemMetricsTimeSeriesDoc(diag.SystemMetricsList) // SystemMetrics
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		serverStatusTSD = initServerStatusTimeSeriesDoc(diag.ServerStatusList) // ServerStatus
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		wiredTigerTSD = initWiredTigerTimeSeriesDoc(diag.ServerStatusList) // ServerStatus
-	}()
-	wg.Wait()
-
-	// merge
-	ftdc.TimeSeriesData = serverStatusTSD
-	for k, v := range wiredTigerTSD {
-		ftdc.TimeSeriesData[k] = v
-	}
-	ftdc.ReplicationLags = replicationLags
-	for k, v := range replicationTSD {
-		ftdc.TimeSeriesData[k] = v
-	}
-	ftdc.DiskStats = diskStats
-	for k, v := range systemMetricsTSD {
-		ftdc.TimeSeriesData[k] = v
-	}
-	etm := time.Now()
-	var doc ServerInfoDoc
-	b, _ := json.Marshal(ftdc.ServerInfo)
-	json.Unmarshal(b, &doc)
-	log.Println("data points ready for", doc.HostInfo.System.Hostname, ", time spent:", etm.Sub(btm).String())
-}
-
 func getDataPoint(v float64, t float64) []float64 {
 	dp := []float64{}
 	if v < 0 {
@@ -146,7 +65,7 @@ func getDataPoint(v float64, t float64) []float64 {
 	return dp
 }
 
-func initReplSetGetStatusTimeSeriesDoc(replSetGetStatusList []ReplSetStatusDoc) (map[string]TimeSeriesDoc, map[string]TimeSeriesDoc) {
+func getReplSetGetStatusTimeSeriesDoc(replSetGetStatusList []ReplSetStatusDoc, legends *[]string) (map[string]TimeSeriesDoc, map[string]TimeSeriesDoc) {
 	var timeSeriesData = map[string]TimeSeriesDoc{}
 	var replicationLags = map[string]TimeSeriesDoc{}
 	var hosts []string
@@ -173,7 +92,9 @@ func initReplSetGetStatusTimeSeriesDoc(replSetGetStatusList []ReplSetStatusDoc) 
 				} else {
 					legend = mb.Name[0:a] + mb.Name[b:]
 				}
-				log.Println(hostname, legend)
+				if len(*legends) == 0 {
+					log.Println(hostname, legend)
+				}
 				hosts = append(hosts, hostname)
 				timeSeriesData[legend] = TimeSeriesDoc{legend, [][]float64{}}
 				node := "repl_" + strconv.Itoa(n)
@@ -209,10 +130,11 @@ func initReplSetGetStatusTimeSeriesDoc(replSetGetStatusList []ReplSetStatusDoc) 
 		}
 	}
 
+	*legends = hosts
 	return timeSeriesData, replicationLags
 }
 
-func initSystemMetricsTimeSeriesDoc(systemMetricsList []SystemMetricsDoc) (map[string]TimeSeriesDoc, map[string]DiskStats) {
+func getSystemMetricsTimeSeriesDoc(systemMetricsList []SystemMetricsDoc) (map[string]TimeSeriesDoc, map[string]DiskStats) {
 	var timeSeriesData = map[string]TimeSeriesDoc{}
 	var diskStats = map[string]DiskStats{}
 	var pstat = SystemMetricsDoc{}
@@ -279,7 +201,7 @@ func initSystemMetricsTimeSeriesDoc(systemMetricsList []SystemMetricsDoc) (map[s
 	return timeSeriesData, diskStats
 }
 
-func initServerStatusTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]TimeSeriesDoc {
+func getServerStatusTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]TimeSeriesDoc {
 	var timeSeriesData = map[string]TimeSeriesDoc{}
 	pstat := ServerStatusDoc{}
 	var x TimeSeriesDoc
@@ -372,7 +294,7 @@ func initServerStatusTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[strin
 	return timeSeriesData
 }
 
-func initWiredTigerTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]TimeSeriesDoc {
+func getWiredTigerTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]TimeSeriesDoc {
 	var timeSeriesData = map[string]TimeSeriesDoc{}
 	pstat := ServerStatusDoc{}
 	var x TimeSeriesDoc

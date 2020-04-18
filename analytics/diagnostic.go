@@ -111,14 +111,17 @@ func (d *DiagnosticData) DecodeDiagnosticData(filenames []string) error {
 	}
 
 	if len(d.ServerStatusList) == 0 {
-		return errors.New("no FTDC data found")
+		log.Println("no FTDC data found")
+		t := time.Now().Unix() * 1000
+		minute := int64(60) * 1000
+		d.endpoint = fmt.Sprintf(endpointTemplate, t, t+(10*minute))
+	} else {
+		log.Printf("Stats from %v to %v\n", d.ServerStatusList[0].LocalTime.Format("2006-01-02T15:04:05Z"),
+			d.ServerStatusList[len(d.ServerStatusList)-1].LocalTime.Format("2006-01-02T15:04:05Z"))
+		d.endpoint = fmt.Sprintf("/d/simagix-grafana/mongodb-mongo-ftdc?orgId=1&from=%v&to=%v",
+			d.ServerStatusList[0].LocalTime.Unix()*1000,
+			d.ServerStatusList[len(d.ServerStatusList)-1].LocalTime.Unix()*1000)
 	}
-
-	log.Printf("Stats from %v to %v\n", d.ServerStatusList[0].LocalTime.Format("2006-01-02T15:04:05Z"),
-		d.ServerStatusList[len(d.ServerStatusList)-1].LocalTime.Format("2006-01-02T15:04:05Z"))
-	d.endpoint = fmt.Sprintf("/d/simagix-grafana/mongodb-mongo-ftdc?orgId=1&from=%v&to=%v",
-		d.ServerStatusList[0].LocalTime.Unix()*1000,
-		d.ServerStatusList[len(d.ServerStatusList)-1].LocalTime.Unix()*1000)
 	return nil
 }
 
