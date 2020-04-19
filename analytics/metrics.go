@@ -178,28 +178,29 @@ func (m *Metrics) search(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
+	var tsData []interface{}
 	decoder := json.NewDecoder(r.Body)
 	var qr QueryRequest
 	if err := decoder.Decode(&qr); err != nil {
+		json.NewEncoder(w).Encode(tsData)
 		return
 	}
 	ftdc := m.ftdcStats
-	var tsData []interface{}
 	for _, target := range qr.Targets {
 		if target.Type == "timeserie" {
-			if target.Target == "replication_lags" { // replaced with actual hostname
+			if target.Target == "replication_lags" && len(ftdc.ReplicationLags) > 0 { // replaced with actual hostname
 				for k, v := range ftdc.ReplicationLags {
 					data := v
 					data.Target = k
 					tsData = append(tsData, filterTimeSeriesData(data, qr.Range.From, qr.Range.To))
 				}
-			} else if target.Target == "disks_utils" {
+			} else if target.Target == "disks_utils" && len(ftdc.DiskStats) > 0 {
 				for k, v := range ftdc.DiskStats {
 					data := v.Utilization
 					data.Target = k
 					tsData = append(tsData, filterTimeSeriesData(data, qr.Range.From, qr.Range.To))
 				}
-			} else if target.Target == "disks_iops" {
+			} else if target.Target == "disks_iops" && len(ftdc.DiskStats) > 0 {
 				for k, v := range ftdc.DiskStats {
 					data := v.IOPS
 					data.Target = k
