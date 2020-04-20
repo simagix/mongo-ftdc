@@ -250,45 +250,52 @@ func (m *Metrics) AddFTDCDetailStats(diag *DiagnosticData) {
 	m.RLock()
 	defer m.RUnlock()
 	ftdc := &m.ftdcStats
+
+	sort.Slice(diag.ReplSetStatusList, func(i int, j int) bool {
+		return diag.ReplSetStatusList[i].Date.Before(diag.ReplSetStatusList[j].Date)
+	})
 	if len(ftdc.ReplSetStatusList) == 0 {
 		ftdc.ReplSetStatusList = diag.ReplSetStatusList
 	} else {
 		lastOne := ftdc.ReplSetStatusList[len(ftdc.ReplSetStatusList)-1]
-		for _, v := range diag.ReplSetStatusList {
+		for i, v := range diag.ReplSetStatusList {
 			if v.Date.After(lastOne.Date) {
-				ftdc.ReplSetStatusList = append(ftdc.ReplSetStatusList, v)
+				ftdc.ReplSetStatusList = append(ftdc.ReplSetStatusList, diag.ReplSetStatusList[i:]...)
+				break
 			}
 		}
 	}
-	sort.Slice(ftdc.ReplSetStatusList, func(i int, j int) bool {
-		return ftdc.ReplSetStatusList[i].Date.Before(ftdc.ReplSetStatusList[j].Date)
+
+	sort.Slice(diag.ServerStatusList, func(i int, j int) bool {
+		return diag.ServerStatusList[i].LocalTime.Before(diag.ServerStatusList[j].LocalTime)
 	})
 	if len(ftdc.ServerStatusList) == 0 {
 		ftdc.ServerStatusList = diag.ServerStatusList
 	} else {
 		lastOne := ftdc.ServerStatusList[len(ftdc.ServerStatusList)-1]
-		for _, v := range diag.ServerStatusList {
+		for i, v := range diag.ServerStatusList {
 			if v.LocalTime.After(lastOne.LocalTime) {
-				ftdc.ServerStatusList = append(ftdc.ServerStatusList, v)
+				ftdc.ServerStatusList = append(ftdc.ServerStatusList, diag.ServerStatusList[i:]...)
+				break
 			}
 		}
 	}
-	sort.Slice(ftdc.ServerStatusList, func(i int, j int) bool {
-		return ftdc.ServerStatusList[i].LocalTime.Before(ftdc.ServerStatusList[j].LocalTime)
+
+	sort.Slice(diag.SystemMetricsList, func(i int, j int) bool {
+		return diag.SystemMetricsList[i].Start.Before(diag.SystemMetricsList[j].Start)
 	})
 	if len(ftdc.SystemMetricsList) == 0 {
 		ftdc.SystemMetricsList = diag.SystemMetricsList
 	} else {
 		lastOne := ftdc.SystemMetricsList[len(ftdc.SystemMetricsList)-1]
-		for _, v := range diag.SystemMetricsList {
+		for i, v := range diag.SystemMetricsList {
 			if v.Start.After(lastOne.Start) {
-				ftdc.SystemMetricsList = append(ftdc.SystemMetricsList, v)
+				ftdc.SystemMetricsList = append(ftdc.SystemMetricsList, diag.SystemMetricsList[i:]...)
+				break
 			}
 		}
 	}
-	sort.Slice(ftdc.SystemMetricsList, func(i int, j int) bool {
-		return ftdc.SystemMetricsList[i].Start.Before(ftdc.SystemMetricsList[j].Start)
-	})
+
 	ftdc.ServerInfo = diag.ServerInfo
 	btm := time.Now()
 	var wiredTigerTSD map[string]TimeSeriesDoc
