@@ -79,12 +79,12 @@ func getSystemMetricsDataPoints(attribsMap map[string][]int64, i uint32) SystemM
 		}
 		m := sm.Disks[disk]
 		switch stats {
-		case "read_time_ms":
-			m.ReadTimeMS = attribsMap[key][i]
-		case "write_time_ms":
-			m.WriteTimeMS = attribsMap[key][i]
-		case "io_queued_ms":
-			m.IOQueuedMS = attribsMap[key][i]
+		// case "read_time_ms":
+		// 	m.ReadTimeMS = attribsMap[key][i]
+		// case "write_time_ms":
+		// 	m.WriteTimeMS = attribsMap[key][i]
+		// case "io_queued_ms":
+		// 	m.IOQueuedMS = attribsMap[key][i]
 		case "io_time_ms":
 			m.IOTimeMS = attribsMap[key][i]
 		case "reads":

@@ -146,18 +146,9 @@ func getSystemMetricsTimeSeriesDoc(systemMetricsList []SystemMetricsDoc) (map[st
 		if i > 0 {
 			t := float64(stat.Start.UnixNano() / (1000 * 1000))
 			for k, disk := range stat.Disks {
-				disk.IO = disk.Reads + disk.Writes
-				totalMS := (disk.ReadTimeMS + disk.WriteTimeMS) - (pstat.Disks[k].ReadTimeMS + pstat.Disks[k].WriteTimeMS)
-				u := float64(0)
-				if totalMS != 0 {
-					u = float64(100 * (disk.IOTimeMS - pstat.Disks[k].IOTimeMS) / totalMS)
-				}
-				if u > 100 {
-					continue
-				}
+				u := 100 * float64(disk.IOTimeMS-pstat.Disks[k].IOTimeMS) / 1000 // / 1000 ms * 100 %
 				iops := float64(disk.Reads+disk.Writes-(pstat.Disks[k].Reads+pstat.Disks[k].Writes)) / float64(stat.Start.Sub(pstat.Start).Seconds())
-				qlen := float64(disk.IOInProgress)
-
+				qlen := float64(disk.IOInProgress - pstat.Disks[k].IOInProgress)
 				x := diskStats[k]
 				x.Utilization.DataPoints = append(x.Utilization.DataPoints, getDataPoint(u, t))
 				x.IOPS.DataPoints = append(x.IOPS.DataPoints, getDataPoint(iops, t))

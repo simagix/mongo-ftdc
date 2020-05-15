@@ -49,15 +49,34 @@ func parseTime(filename string) (time.Time, error) {
 }
 
 func filterTimeSeriesData(tsData TimeSeriesDoc, from time.Time, to time.Time) TimeSeriesDoc {
-	var data = TimeSeriesDoc{DataPoints: [][]float64{}}
+	var data = TimeSeriesDoc{Target: tsData.Target, DataPoints: [][]float64{}}
 	hours := int(to.Sub(from).Hours()) + 1
-	data.Target = tsData.Target
+	points := [][]float64{}
 	for i, v := range tsData.DataPoints {
 		tm := time.Unix(0, int64(v[1])*int64(time.Millisecond))
 		if (i%hours) != 0 || tm.After(to) || tm.Before(from) {
 			continue
 		}
-		data.DataPoints = append(data.DataPoints, v)
+		points = append(points, v)
+	}
+	if len(points) > 720 {
+		denom := len(points) / 720
+		sum := 0.0
+		num := 0.0
+		for i := 0; i < len(points); i++ {
+			sum += points[i][0]
+			num++
+			if i%denom == 0 {
+				data.DataPoints = append(data.DataPoints, []float64{sum / num, points[i][1]})
+				sum = 0
+				num = 0
+			}
+		}
+		if num > 0 {
+			data.DataPoints = append(data.DataPoints, []float64{sum / num, points[len(points)-1][1]})
+		}
+	} else {
+		data.DataPoints = points
 	}
 	return data
 }
