@@ -15,16 +15,10 @@ import (
 )
 
 func main() {
-	var err error
-	var hostname string
 	var port = 5408
 	metrics := analytics.NewMetrics()
 	metrics.SetVerbose(true)
 	metrics.ProcessFiles(os.Args)
-	if hostname, err = os.Hostname(); err != nil {
-		hostname = "127.0.0.1"
-	}
-	log.Printf("HTTP server ready, URL: http://%s:%d/\n", hostname, port)
 	addr := fmt.Sprintf(":%d", port)
 	http.HandleFunc("/", gox.Cors(handler))
 	log.Fatal(http.ListenAndServe(addr, nil))

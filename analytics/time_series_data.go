@@ -52,7 +52,7 @@ var wiredTigerChartsLegends = []string{
 }
 var systemMetricsChartsLegends = []string{
 	"cpu_idle", "cpu_iowait", "cpu_nice", "cpu_softirq", "cpu_steal", "cpu_system", "cpu_user",
-	"disks_utils", "disks_iops", "io_in_progress"}
+	"disks_utils", "disks_iops", "io_in_progress", "read_time_ms", "write_time_ms", "io_queued_ms"}
 var replSetChartsLegends = []string{"replication_lags"}
 
 func getDataPoint(v float64, t float64) []float64 {
@@ -149,10 +149,16 @@ func getSystemMetricsTimeSeriesDoc(systemMetricsList []SystemMetricsDoc) (map[st
 				u := 100 * float64(disk.IOTimeMS-pstat.Disks[k].IOTimeMS) / 1000 // / 1000 ms * 100 %
 				iops := float64(disk.Reads+disk.Writes-(pstat.Disks[k].Reads+pstat.Disks[k].Writes)) / float64(stat.Start.Sub(pstat.Start).Seconds())
 				qlen := float64(disk.IOInProgress - pstat.Disks[k].IOInProgress)
+				readTimeMS := float64(disk.ReadTimeMS - pstat.Disks[k].ReadTimeMS)
+				writeTimeMS := float64(disk.WriteTimeMS - pstat.Disks[k].WriteTimeMS)
+				ioQueuedMS := float64(disk.IOQueuedMS - pstat.Disks[k].IOQueuedMS)
 				x := diskStats[k]
 				x.Utilization.DataPoints = append(x.Utilization.DataPoints, getDataPoint(u, t))
 				x.IOPS.DataPoints = append(x.IOPS.DataPoints, getDataPoint(iops, t))
 				x.IOInProgress.DataPoints = append(x.IOInProgress.DataPoints, getDataPoint(qlen, t))
+				x.ReadTimeMS.DataPoints = append(x.ReadTimeMS.DataPoints, getDataPoint(readTimeMS, t))
+				x.WriteTimeMS.DataPoints = append(x.WriteTimeMS.DataPoints, getDataPoint(writeTimeMS, t))
+				x.IOQueuedMS.DataPoints = append(x.IOQueuedMS.DataPoints, getDataPoint(ioQueuedMS, t))
 				diskStats[k] = x
 			}
 

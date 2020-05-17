@@ -7,7 +7,7 @@ else
   dep ensure
 fi
 
-ver=0.9.3
+ver=0.9.4
 mkdir -p bin
 env GOOS=darwin GOARCH=amd64 go build -o bin/ftdc-osx-x64 simple_json.go
 env GOOS=linux GOARCH=amd64 go build -o ftdc-linux-x64 simple_json.go

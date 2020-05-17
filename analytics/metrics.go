@@ -14,21 +14,19 @@ import (
 	"net/http"
 	"os"
 	"sort"
-	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/simagix/gox"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"golang.org/x/text/language"
-	"golang.org/x/text/message"
 )
 
 // Metrics stores metrics from FTDC data
 type Metrics struct {
 	sync.RWMutex
-	endpoint  string
+	endpoints []string
 	ftdcStats FTDCStats
 	verbose   bool
 }
@@ -47,9 +45,12 @@ type FTDCStats struct {
 
 // DiskStats -
 type DiskStats struct {
-	Utilization  TimeSeriesDoc
 	IOPS         TimeSeriesDoc
 	IOInProgress TimeSeriesDoc
+	IOQueuedMS   TimeSeriesDoc
+	ReadTimeMS   TimeSeriesDoc
+	WriteTimeMS  TimeSeriesDoc
+	Utilization  TimeSeriesDoc
 }
 
 type directoryReq struct {
@@ -69,7 +70,8 @@ func NewMetrics() *Metrics {
 	return &m
 }
 
-const endpointTemplate = `/d/simagix-grafana/mongodb-mongo-ftdc?orgId=1&from=%v&to=%v`
+const analyticsEndpoint = `/d/simagix-grafana/mongodb-mongo-ftdc?orgId=1&from=%v&to=%v`
+const disksEndpoint = `/d/simagix-grafana-disks/mongodb-disks-stats?orgId=1&from=%v&to=%v`
 
 // SetVerbose sets verbose mode
 func (m *Metrics) SetVerbose(verbose bool) { m.verbose = verbose }
@@ -82,7 +84,7 @@ func (m *Metrics) ProcessFiles(filenames []string) error {
 	if len(filenames) == 0 {
 		t := time.Now().Unix() * 1000
 		minute := int64(60) * 1000
-		endpoint := fmt.Sprintf(endpointTemplate, t, t+(10*minute))
+		endpoint := fmt.Sprintf(analyticsEndpoint, t, t+(10*minute))
 		log.Println(fmt.Sprintf("http://localhost:%d%v", port, endpoint))
 		return errors.New("no available data files found")
 	}
@@ -94,9 +96,11 @@ func (m *Metrics) ProcessFiles(filenames []string) error {
 	if err := diag.DecodeDiagnosticData(filenames); err != nil { // get summary
 		return err
 	}
-	m.endpoint = diag.endpoint
+	m.endpoints = diag.endpoints
 	m.AddFTDCDetailStats(diag)
-	log.Println(fmt.Sprintf("http://localhost:%d%v", port, diag.endpoint))
+	for _, endpoint := range diag.endpoints {
+		log.Println(fmt.Sprintf("http://localhost:%d%v", port, endpoint))
+	}
 	return nil
 }
 
@@ -126,7 +130,7 @@ func (m *Metrics) readProcessedFTDC(infile string) error {
 	tm1 := time.Unix(0, int64(points[0][1])*int64(time.Millisecond)).Unix() * 1000
 	tm2 := time.Unix(0, int64(points[len(points)-1][1])*int64(time.Millisecond)).Unix() * 1000
 	log.Println(tm1, tm2)
-	endpoint := fmt.Sprintf(endpointTemplate, tm1, tm2)
+	endpoint := fmt.Sprintf(analyticsEndpoint, tm1, tm2)
 	log.Printf("http://localhost:3000%v\n", endpoint)
 	log.Printf("http://localhost:3030%v\n", endpoint)
 	return err
@@ -159,7 +163,7 @@ func (m *Metrics) readDirectory(w http.ResponseWriter, r *http.Request) {
 		if err := m.ProcessFiles(filenames); err != nil {
 			json.NewEncoder(w).Encode(bson.M{"ok": 0, "err": err.Error()})
 		} else {
-			json.NewEncoder(w).Encode(bson.M{"ok": 1, "endpoint": m.endpoint})
+			json.NewEncoder(w).Encode(bson.M{"ok": 1, "endpoints": strings.Join(m.endpoints, ",")})
 		}
 	default:
 		http.Error(w, "bad method; supported OPTIONS, POST", http.StatusBadRequest)
@@ -206,9 +210,27 @@ func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
 					data.Target = k
 					tsData = append(tsData, filterTimeSeriesData(data, qr.Range.From, qr.Range.To))
 				}
-			} else if target.Target == "disks_queue_length" {
+			} else if target.Target == "disks_queue_length" && len(ftdc.DiskStats) > 0 {
 				for k, v := range ftdc.DiskStats {
 					data := v.IOInProgress
+					data.Target = k
+					tsData = append(tsData, filterTimeSeriesData(data, qr.Range.From, qr.Range.To))
+				}
+			} else if target.Target == "read_time_ms" && len(ftdc.DiskStats) > 0 {
+				for k, v := range ftdc.DiskStats {
+					data := v.ReadTimeMS
+					data.Target = k
+					tsData = append(tsData, filterTimeSeriesData(data, qr.Range.From, qr.Range.To))
+				}
+			} else if target.Target == "write_time_ms" && len(ftdc.DiskStats) > 0 {
+				for k, v := range ftdc.DiskStats {
+					data := v.WriteTimeMS
+					data.Target = k
+					tsData = append(tsData, filterTimeSeriesData(data, qr.Range.From, qr.Range.To))
+				}
+			} else if target.Target == "io_queued_ms" && len(ftdc.DiskStats) > 0 {
+				for k, v := range ftdc.DiskStats {
+					data := v.IOQueuedMS
 					data.Target = k
 					tsData = append(tsData, filterTimeSeriesData(data, qr.Range.From, qr.Range.To))
 				}
@@ -218,8 +240,7 @@ func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
 		} else if target.Type == "table" {
 			if target.Target == "host_info" {
 				headerList := []bson.M{}
-				headerList = append(headerList, bson.M{"text": "Info", "type": "string"})
-				headerList = append(headerList, bson.M{"text": "Value", "type": "string"})
+				headerList = append(headerList, bson.M{"text": "Configurations", "type": "string"})
 				var si ServerInfoDoc
 				b, _ := json.Marshal(ftdc.ServerInfo)
 				if err := json.Unmarshal(b, &si); err != nil {
@@ -229,14 +250,12 @@ func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				rowList := [][]string{}
-
-				rowList = append(rowList, []string{"CPU", strconv.Itoa(si.HostInfo.System.NumCores) + " cores (" + si.HostInfo.System.CPUArch + ")"})
+				rowList = append(rowList, []string{fmt.Sprintf(`CPU: %v cores (%v)`, si.HostInfo.System.NumCores, si.HostInfo.System.CPUArch)})
 				// rowList = append(rowList, []string{"Hostname", si.HostInfo.System.Hostname})
-				p := message.NewPrinter(language.English)
-				rowList = append(rowList, []string{"Memory (MB)", p.Sprintf("%d", si.HostInfo.System.MemSizeMB)})
-				rowList = append(rowList, []string{"MongoDB Version", si.BuildInfo.Version})
-				rowList = append(rowList, []string{"OS", si.HostInfo.OS.Name})
-				rowList = append(rowList, []string{"OS Type", si.HostInfo.OS.Type + " (" + si.HostInfo.OS.Version + ")"})
+				rowList = append(rowList, []string{fmt.Sprintf(`Memory: %v`, gox.GetStorageSize(1024*1024*si.HostInfo.System.MemSizeMB))})
+				rowList = append(rowList, []string{si.HostInfo.OS.Type + " (" + si.HostInfo.OS.Version + ")"})
+				rowList = append(rowList, []string{si.HostInfo.OS.Name})
+				rowList = append(rowList, []string{fmt.Sprintf(`MongoDB v%v`, si.BuildInfo.Version)})
 				doc1 := bson.M{"columns": headerList, "type": "table", "rows": rowList}
 				tsData = append(tsData, doc1)
 			}

@@ -27,11 +27,11 @@ type CPUMetrics struct {
 
 // DiskMetrics -
 type DiskMetrics struct {
-	// ReadTimeMS   int64 `json:"read_time_ms" bson:"read_time_ms"`
-	// WriteTimeMS  int64 `json:"write_time_ms" bson:"write_time_ms"`
+	ReadTimeMS   int64 `json:"read_time_ms" bson:"read_time_ms"`
+	WriteTimeMS  int64 `json:"write_time_ms" bson:"write_time_ms"`
 	IOInProgress int64 `json:"io_in_progress" bson:"io_in_progress"`
-	// IOQueuedMS   int64 `json:"io_queued_ms" bson:"io_queued_ms"`
-	IOTimeMS int64 `json:"io_time_ms" bson:"io_time_ms"`
-	Reads    int64 `json:"reads" bson:"reads"`
-	Writes   int64 `json:"writes" bson:"writes"`
+	IOQueuedMS   int64 `json:"io_queued_ms" bson:"io_queued_ms"`
+	IOTimeMS     int64 `json:"io_time_ms" bson:"io_time_ms"`
+	Reads        int64 `json:"reads" bson:"reads"`
+	Writes       int64 `json:"writes" bson:"writes"`
 }

@@ -60,7 +60,7 @@ type DiagnosticData struct {
 	ReplSetStatusList []ReplSetStatusDoc
 	SystemMetricsList []SystemMetricsDoc
 	span              int
-	endpoint          string
+	endpoints         []string
 }
 
 // DiagnosticDoc -
@@ -77,9 +77,9 @@ func NewDiagnosticData(span int) *DiagnosticData {
 	return &DiagnosticData{ServerStatusList: []ServerStatusDoc{}, ReplSetStatusList: []ReplSetStatusDoc{}, span: span}
 }
 
-// GetEndPoint gets grafana uri
-func (d *DiagnosticData) GetEndPoint() string {
-	return d.endpoint
+// GetEndPoints gets grafana uri
+func (d *DiagnosticData) GetEndPoints() []string {
+	return d.endpoints
 }
 
 // DecodeDiagnosticData decodes FTDC data files
@@ -114,13 +114,17 @@ func (d *DiagnosticData) DecodeDiagnosticData(filenames []string) error {
 		log.Println("no FTDC data found")
 		t := time.Now().Unix() * 1000
 		minute := int64(60) * 1000
-		d.endpoint = fmt.Sprintf(endpointTemplate, t, t+(10*minute))
+		d.endpoints = append(d.endpoints, fmt.Sprintf(analyticsEndpoint, t, t+(10*minute)))
+		d.endpoints = append(d.endpoints, fmt.Sprintf(disksEndpoint, t, t+(10*minute)))
 	} else {
 		log.Printf("Stats from %v to %v\n", d.ServerStatusList[0].LocalTime.Format("2006-01-02T15:04:05Z"),
 			d.ServerStatusList[len(d.ServerStatusList)-1].LocalTime.Format("2006-01-02T15:04:05Z"))
-		d.endpoint = fmt.Sprintf("/d/simagix-grafana/mongodb-mongo-ftdc?orgId=1&from=%v&to=%v",
+		d.endpoints = append(d.endpoints, fmt.Sprintf(analyticsEndpoint,
 			d.ServerStatusList[0].LocalTime.Unix()*1000,
-			d.ServerStatusList[len(d.ServerStatusList)-1].LocalTime.Unix()*1000)
+			d.ServerStatusList[len(d.ServerStatusList)-1].LocalTime.Unix()*1000))
+		d.endpoints = append(d.endpoints, fmt.Sprintf(disksEndpoint,
+			d.ServerStatusList[0].LocalTime.Unix()*1000,
+			d.ServerStatusList[len(d.ServerStatusList)-1].LocalTime.Unix()*1000))
 	}
 	return nil
 }
