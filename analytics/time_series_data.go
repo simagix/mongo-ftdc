@@ -5,11 +5,14 @@ package analytics
 import (
 	"fmt"
 	"log"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
+
+var mb = (1024.0 * 1024)
 
 // TimeSeriesDoc -
 type TimeSeriesDoc struct {
@@ -39,15 +42,17 @@ type QueryRequest struct {
 
 var serverStatusChartsLegends = []string{
 	"mem_resident", "mem_virtual", "mem_page_faults",
-	"conns_active", "conns_available", "conns_current", "conns_created_per_minute",
+	"conns_active", "conns_available", "conns_current", "conns_created/s",
+	"latency_read", "latency_write", "latency_command",
+	"net_in", "net_out", "net_requests", "net_physical_in", "net_physical_out",
 	"ops_query", "ops_insert", "ops_update", "ops_delete", "ops_getmore", "ops_command",
 	"q_active_read", "q_active_write", "q_queued_read", "q_queued_write",
+	"scan_keys", "scan_objects", "scan_sort",
 }
 var wiredTigerChartsLegends = []string{
-	"latency_read", "latency_write", "latency_command",
-	"scan_keys", "scan_objects", "scan_sort",
+	"wt_blkmgr_read", "wt_blkmgr_written", "wt_blkmgr_written_checkpoint",
 	"wt_cache_max", "wt_cache_used", "wt_cache_dirty",
-	"wt_modified_evicted", "wt_unmodified_evicted", "wt_read_in_cache", "wt_written_from_cache",
+	"wt_modified_evicted", "wt_unmodified_evicted", "wt_cache_read_in", "wt_cache_written_from",
 	"ticket_avail_read", "ticket_avail_write",
 }
 var systemMetricsChartsLegends = []string{
@@ -234,6 +239,30 @@ func getServerStatusTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string
 			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.GlobalLock.ActiveClients.Readers), t))
 			timeSeriesData["q_active_read"] = x
 
+			r := 0.0
+			if stat.OpLatencies.Reads.Ops > 0 {
+				r = float64(stat.OpLatencies.Reads.Latency) / float64(stat.OpLatencies.Reads.Ops) / 1000
+			}
+			x = timeSeriesData["latency_read"]
+			x.DataPoints = append(x.DataPoints, getDataPoint(r, t))
+			timeSeriesData["latency_read"] = x
+
+			w := 0.0
+			if stat.OpLatencies.Writes.Ops > 0 {
+				w = float64(stat.OpLatencies.Writes.Latency) / float64(stat.OpLatencies.Writes.Ops) / 1000
+			}
+			x = timeSeriesData["latency_write"]
+			x.DataPoints = append(x.DataPoints, getDataPoint(w, t))
+			timeSeriesData["latency_write"] = x
+
+			c := 0.0
+			if stat.OpLatencies.Commands.Ops > 0 {
+				c = float64(stat.OpLatencies.Commands.Latency) / float64(stat.OpLatencies.Commands.Ops) / 1000
+			}
+			x = timeSeriesData["latency_command"]
+			x.DataPoints = append(x.DataPoints, getDataPoint(c, t))
+			timeSeriesData["latency_command"] = x
+
 			x = timeSeriesData["q_active_write"]
 			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.GlobalLock.ActiveClients.Writers), t))
 			timeSeriesData["q_active_write"] = x
@@ -247,42 +276,74 @@ func getServerStatusTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string
 			timeSeriesData["q_queued_write"] = x
 
 			if i > 0 {
-				minutes := stat.LocalTime.Sub(pstat.LocalTime).Minutes()
-				if minutes < 1 {
-					minutes = 1
+				seconds := math.Round(stat.LocalTime.Sub(pstat.LocalTime).Seconds())
+				if seconds < 1 {
+					panic(seconds)
 				}
 
 				x = timeSeriesData["mem_page_faults"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.ExtraInfo.PageFaults-pstat.ExtraInfo.PageFaults), t))
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.ExtraInfo.PageFaults-pstat.ExtraInfo.PageFaults)/seconds, t))
 				timeSeriesData["mem_page_faults"] = x
 
-				x = timeSeriesData["conns_created_per_minute"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Connections.TotalCreated-pstat.Connections.TotalCreated)/minutes, t))
-				timeSeriesData["conns_created_per_minute"] = x
+				x = timeSeriesData["conns_created/s"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Connections.TotalCreated-pstat.Connections.TotalCreated)/seconds, t))
+				timeSeriesData["conns_created/s"] = x
+
+				x = timeSeriesData["net_in"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Network.BytesIn-pstat.Network.BytesIn)/mb/seconds, t))
+				timeSeriesData["net_in"] = x
+
+				x = timeSeriesData["net_out"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Network.BytesOut-pstat.Network.BytesOut)/mb/seconds, t))
+				timeSeriesData["net_out"] = x
+
+				x = timeSeriesData["net_requests"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Network.NumRequests-pstat.Network.NumRequests)/seconds, t))
+				timeSeriesData["net_requests"] = x
+
+				x = timeSeriesData["net_physical_in"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Network.PhysicalBytesIn-pstat.Network.PhysicalBytesIn)/mb/seconds, t))
+				timeSeriesData["net_physicalsical_in"] = x
+
+				x = timeSeriesData["net_physical_out"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Network.PhysicalBytesOut-pstat.Network.PhysicalBytesOut)/mb/seconds, t))
+				timeSeriesData["net_physical_out"] = x
 
 				x = timeSeriesData["ops_query"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCounters.Query-pstat.OpCounters.Query), t))
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCounters.Query-pstat.OpCounters.Query)/seconds, t))
 				timeSeriesData["ops_query"] = x
 
 				x = timeSeriesData["ops_insert"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCounters.Insert-pstat.OpCounters.Insert), t))
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCounters.Insert-pstat.OpCounters.Insert)/seconds, t))
 				timeSeriesData["ops_insert"] = x
 
 				x = timeSeriesData["ops_update"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCounters.Update-pstat.OpCounters.Update), t))
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCounters.Update-pstat.OpCounters.Update)/seconds, t))
 				timeSeriesData["ops_update"] = x
 
 				x = timeSeriesData["ops_delete"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCounters.Delete-pstat.OpCounters.Delete), t))
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCounters.Delete-pstat.OpCounters.Delete)/seconds, t))
 				timeSeriesData["ops_delete"] = x
 
 				x = timeSeriesData["ops_getmore"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCounters.Getmore-pstat.OpCounters.Getmore), t))
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCounters.Getmore-pstat.OpCounters.Getmore)/seconds, t))
 				timeSeriesData["ops_getmore"] = x
 
 				x = timeSeriesData["ops_command"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCounters.Command-pstat.OpCounters.Command), t))
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCounters.Command-pstat.OpCounters.Command)/seconds, t))
 				timeSeriesData["ops_command"] = x
+
+				x = timeSeriesData["scan_keys"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.QueryExecutor.Scanned-pstat.Metrics.QueryExecutor.Scanned)/seconds, t))
+				timeSeriesData["scan_keys"] = x
+
+				x = timeSeriesData["scan_objects"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.QueryExecutor.ScannedObjects-pstat.Metrics.QueryExecutor.ScannedObjects)/seconds, t))
+				timeSeriesData["scan_objects"] = x
+
+				x = timeSeriesData["scan_sort"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.Operation.ScanAndOrder-pstat.Metrics.Operation.ScanAndOrder)/seconds, t))
+				timeSeriesData["scan_sort"] = x
 			} // if i > 0
 		} // if stat.Uptime > pstat.Uptime
 
@@ -323,63 +384,38 @@ func getWiredTigerTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]T
 			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.ConcurrentTransactions.Write.Available), t))
 			timeSeriesData["ticket_avail_write"] = x
 
-			r := 0.0
-			if stat.OpLatencies.Reads.Ops > 0 {
-				r = float64(stat.OpLatencies.Reads.Latency) / float64(stat.OpLatencies.Reads.Ops) / 1000
-			}
-			x = timeSeriesData["latency_read"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(r, t))
-			timeSeriesData["latency_read"] = x
-
-			w := 0.0
-			if stat.OpLatencies.Writes.Ops > 0 {
-				w = float64(stat.OpLatencies.Writes.Latency) / float64(stat.OpLatencies.Writes.Ops) / 1000
-			}
-			x = timeSeriesData["latency_write"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(w, t))
-			timeSeriesData["latency_write"] = x
-
-			c := 0.0
-			if stat.OpLatencies.Commands.Ops > 0 {
-				c = float64(stat.OpLatencies.Commands.Latency) / float64(stat.OpLatencies.Commands.Ops) / 1000
-			}
-			x = timeSeriesData["latency_command"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(c, t))
-			timeSeriesData["latency_command"] = x
-
 			if i > 0 {
-				minutes := stat.LocalTime.Sub(pstat.LocalTime).Minutes()
-				if minutes < 1 {
-					minutes = 1
+				seconds := math.Round(stat.LocalTime.Sub(pstat.LocalTime).Seconds())
+				if seconds < 1 {
+					panic(seconds)
 				}
+				x = timeSeriesData["wt_blkmgr_read"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.BlockManager.BytesRead-pstat.WiredTiger.BlockManager.BytesRead)/mb/seconds, t))
+				timeSeriesData["wt_blkmgr_read"] = x
 
-				x = timeSeriesData["scan_keys"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.QueryExecutor.Scanned-pstat.Metrics.QueryExecutor.Scanned), t))
-				timeSeriesData["scan_keys"] = x
+				x = timeSeriesData["wt_blkmgr_written"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.BlockManager.BytesWritten-pstat.WiredTiger.BlockManager.BytesWritten)/mb/seconds, t))
+				timeSeriesData["wt_blkmgr_written"] = x
 
-				x = timeSeriesData["scan_objects"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.QueryExecutor.ScannedObjects-pstat.Metrics.QueryExecutor.ScannedObjects), t))
-				timeSeriesData["scan_objects"] = x
-
-				x = timeSeriesData["scan_sort"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.Operation.ScanAndOrder-pstat.Metrics.Operation.ScanAndOrder), t))
-				timeSeriesData["scan_sort"] = x
+				x = timeSeriesData["wt_blkmgr_written_checkpoint"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.BlockManager.BytesWrittenCheckPoint-pstat.WiredTiger.BlockManager.BytesWrittenCheckPoint)/mb/seconds, t))
+				timeSeriesData["wt_blkmgr_written_checkpoint"] = x
 
 				x = timeSeriesData["wt_modified_evicted"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.Cache.ModifiedPagesEvicted-pstat.WiredTiger.Cache.ModifiedPagesEvicted)/minutes, t))
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.Cache.ModifiedPagesEvicted-pstat.WiredTiger.Cache.ModifiedPagesEvicted)/seconds, t))
 				timeSeriesData["wt_modified_evicted"] = x
 
 				x = timeSeriesData["wt_unmodified_evicted"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.Cache.UnmodifiedPagesEvicted-pstat.WiredTiger.Cache.UnmodifiedPagesEvicted)/minutes, t))
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.Cache.UnmodifiedPagesEvicted-pstat.WiredTiger.Cache.UnmodifiedPagesEvicted)/seconds, t))
 				timeSeriesData["wt_unmodified_evicted"] = x
 
-				x = timeSeriesData["wt_read_in_cache"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.Cache.PagesReadIntoCache-pstat.WiredTiger.Cache.PagesReadIntoCache)/minutes, t))
-				timeSeriesData["wt_read_in_cache"] = x
+				x = timeSeriesData["wt_cache_read_in"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.Cache.BytesReadIntoCache-pstat.WiredTiger.Cache.BytesReadIntoCache)/mb/seconds, t))
+				timeSeriesData["wt_cache_read_in"] = x
 
-				x = timeSeriesData["wt_written_from_cache"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.Cache.PagesWrittenFromCache-pstat.WiredTiger.Cache.PagesWrittenFromCache)/minutes, t))
-				timeSeriesData["wt_written_from_cache"] = x
+				x = timeSeriesData["wt_cache_written_from"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.Cache.BytesWrittenFromCache-pstat.WiredTiger.Cache.BytesWrittenFromCache)/mb/seconds, t))
+				timeSeriesData["wt_cache_written_from"] = x
 			} // if i > 0
 		} // if stat.Uptime > pstat.Uptime
 

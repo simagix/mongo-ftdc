@@ -11,7 +11,7 @@ services:
       GF_INSTALL_PLUGINS: grafana-simple-json-datasource
 
   ftdc:
-    image: simagix/ftdc:0.9.4
+    image: simagix/ftdc:1.0
     hostname: ftdc
     volumes:
       - ./diagnostic.data:/diagnostic.data

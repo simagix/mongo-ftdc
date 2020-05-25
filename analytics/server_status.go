@@ -48,6 +48,15 @@ type MetricsDoc struct {
 	Operation     OperationDoc     `json:"operation" bson:"operation"`
 }
 
+// NetworkDoc contains db.serverStatus().network
+type NetworkDoc struct {
+	BytesIn          int64 `json:"bytesIn" bson:"bytesIn"`
+	BytesOut         int64 `json:"bytesOut" bson:"bytesOut"`
+	NumRequests      int64 `json:"numRequests" bson:"numRequests"`
+	PhysicalBytesIn  int64 `json:"physicalBytesIn" bson:"physicalBytesIn"`
+	PhysicalBytesOut int64 `json:"physicalBytesOut" bson:"physicalBytesOut"`
+}
+
 // OperationDoc contains db.serverStatus().operation
 type OperationDoc struct {
 	ScanAndOrder   int64 `json:"scanAndOrder" bson:"scanAndOrder"`
@@ -83,15 +92,22 @@ type QueryExecutorDoc struct {
 	ScannedObjects int64 `json:"scannedObjects" bson:"scannedObjects"`
 }
 
+// WiredTigerBlockManagerDoc contains db.serverStatus().wiredTiger.cache
+type WiredTigerBlockManagerDoc struct {
+	BytesRead              int64 `json:"bytes read"`
+	BytesWritten           int64 `json:"bytes written"`
+	BytesWrittenCheckPoint int64 `json:"bytes written for checkpoint"`
+}
+
 // WiredTigerCacheDoc contains db.serverStatus().wiredTiger.cache
 type WiredTigerCacheDoc struct {
-	MaxBytesConfigured     int64 `json:"maximum bytes configured" bson:"maximum bytes configured"`
+	BytesReadIntoCache     int64 `json:"bytes read into cache" bson:"bytes read into cache"`
+	BytesWrittenFromCache  int64 `json:"bytes written from cache" bson:"bytes written from cache"`
 	CurrentlyInCache       int64 `json:"bytes currently in the cache" bson:"bytes currently in the cache"`
+	MaxBytesConfigured     int64 `json:"maximum bytes configured" bson:"maximum bytes configured"`
 	ModifiedPagesEvicted   int64 `json:"modified pages evicted" bson:"modified pages evicted"`
 	UnmodifiedPagesEvicted int64 `json:"unmodified pages evicted" bson:"unmodified pages evicted"`
 	TrackedDirtyBytes      int64 `json:"tracked dirty bytes in the cache" bson:"tracked dirty bytes in the cache"`
-	PagesReadIntoCache     int64 `json:"pages read into cache" bson:"pages read into cache"`
-	PagesWrittenFromCache  int64 `json:"pages written from cache" bson:"pages written from cache"`
 }
 
 // ConcurrentTransactionsCountDoc contains db.serverStatus().wiredTiger.concurrentTransactions.[read|write]
@@ -110,6 +126,7 @@ type ConcurrentTransactionsDoc struct {
 // WiredTigerDoc contains db.serverStatus().wiredTiger
 type WiredTigerDoc struct {
 	Perf                   interface{}               `json:"perf" bson:"perf"`
+	BlockManager           WiredTigerBlockManagerDoc `json:"block-manager" bson:"block-manager"`
 	Cache                  WiredTigerCacheDoc        `json:"cache" bson:"cache"`
 	ConcurrentTransactions ConcurrentTransactionsDoc `json:"concurrentTransactions" bson:"concurrentTransactions"`
 }
@@ -131,6 +148,7 @@ type ServerStatusDoc struct {
 	LocalTime   time.Time      `json:"localTime" bson:"localTime"`
 	Mem         MemDoc         `json:"mem" bson:"mem"`
 	Metrics     MetricsDoc     `json:"metrics" bson:"metrics"`
+	Network     NetworkDoc     `json:"network" bson:"network"`
 	OpCounters  OpCountersDoc  `json:"opcounters" bson:"opcounters"`
 	OpLatencies OpLatenciesDoc `json:"opLatencies" bson:"opLatencies"`
 	Process     string         `json:"process" bson:"process"`

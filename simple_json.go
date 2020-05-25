@@ -4,10 +4,10 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/simagix/gox"
 	"github.com/simagix/mongo-ftdc/analytics"
@@ -15,11 +15,15 @@ import (
 )
 
 func main() {
-	var port = 5408
+	port := flag.Int("port", 5408, "port number")
+	verbose := flag.Bool("v", false, "verbose")
+	flag.Parse()
+	flagset := make(map[string]bool)
+	flag.Visit(func(f *flag.Flag) { flagset[f.Name] = true })
 	metrics := analytics.NewMetrics()
-	metrics.SetVerbose(true)
-	metrics.ProcessFiles(os.Args)
-	addr := fmt.Sprintf(":%d", port)
+	metrics.SetVerbose(*verbose)
+	metrics.ProcessFiles(flag.Args())
+	addr := fmt.Sprintf(":%d", *port)
 	http.HandleFunc("/", gox.Cors(handler))
 	log.Fatal(http.ListenAndServe(addr, nil))
 }

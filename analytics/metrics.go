@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"sort"
@@ -81,6 +82,7 @@ func (m *Metrics) ProcessFiles(filenames []string) error {
 	hostname, _ := os.Hostname()
 	port := 3000
 	span := 1
+	filenames = GetMetricsFilenames(filenames)
 	if len(filenames) == 0 {
 		t := time.Now().Unix() * 1000
 		minute := int64(60) * 1000
@@ -90,7 +92,14 @@ func (m *Metrics) ProcessFiles(filenames []string) error {
 	}
 	if hostname == "ftdc" { // from docker-compose
 		port = 3030
-		span = (len(filenames)-1)/5 + 1
+		if len(filenames) > 3 {
+			if m.verbose == true {
+				span = (len(filenames)-1)/5 + 1
+			} else { //trim it down to 3 files
+				fmt.Println("* limits to latest 3 files in a Docker container")
+				filenames = filenames[len(filenames)-3:]
+			}
+		}
 	}
 	diag := NewDiagnosticData(span)
 	if err := diag.DecodeDiagnosticData(filenames); err != nil { // get summary
@@ -196,68 +205,73 @@ func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
 				for k, v := range ftdc.ReplicationLags {
 					data := v
 					data.Target = k
-					tsData = append(tsData, filterTimeSeriesData(data, qr.Range.From, qr.Range.To))
+					tsData = append(tsData, FilterTimeSeriesData(data, qr.Range.From, qr.Range.To))
 				}
 			} else if target.Target == "disks_utils" && len(ftdc.DiskStats) > 0 {
 				for k, v := range ftdc.DiskStats {
 					data := v.Utilization
 					data.Target = k
-					tsData = append(tsData, filterTimeSeriesData(data, qr.Range.From, qr.Range.To))
+					tsData = append(tsData, FilterTimeSeriesData(data, qr.Range.From, qr.Range.To))
 				}
 			} else if target.Target == "disks_iops" && len(ftdc.DiskStats) > 0 {
 				for k, v := range ftdc.DiskStats {
 					data := v.IOPS
 					data.Target = k
-					tsData = append(tsData, filterTimeSeriesData(data, qr.Range.From, qr.Range.To))
+					tsData = append(tsData, FilterTimeSeriesData(data, qr.Range.From, qr.Range.To))
 				}
 			} else if target.Target == "disks_queue_length" && len(ftdc.DiskStats) > 0 {
 				for k, v := range ftdc.DiskStats {
 					data := v.IOInProgress
 					data.Target = k
-					tsData = append(tsData, filterTimeSeriesData(data, qr.Range.From, qr.Range.To))
+					tsData = append(tsData, FilterTimeSeriesData(data, qr.Range.From, qr.Range.To))
 				}
 			} else if target.Target == "read_time_ms" && len(ftdc.DiskStats) > 0 {
 				for k, v := range ftdc.DiskStats {
 					data := v.ReadTimeMS
 					data.Target = k
-					tsData = append(tsData, filterTimeSeriesData(data, qr.Range.From, qr.Range.To))
+					tsData = append(tsData, FilterTimeSeriesData(data, qr.Range.From, qr.Range.To))
 				}
 			} else if target.Target == "write_time_ms" && len(ftdc.DiskStats) > 0 {
 				for k, v := range ftdc.DiskStats {
 					data := v.WriteTimeMS
 					data.Target = k
-					tsData = append(tsData, filterTimeSeriesData(data, qr.Range.From, qr.Range.To))
+					tsData = append(tsData, FilterTimeSeriesData(data, qr.Range.From, qr.Range.To))
 				}
 			} else if target.Target == "io_queued_ms" && len(ftdc.DiskStats) > 0 {
 				for k, v := range ftdc.DiskStats {
 					data := v.IOQueuedMS
 					data.Target = k
-					tsData = append(tsData, filterTimeSeriesData(data, qr.Range.From, qr.Range.To))
+					tsData = append(tsData, FilterTimeSeriesData(data, qr.Range.From, qr.Range.To))
 				}
 			} else {
-				tsData = append(tsData, filterTimeSeriesData(ftdc.TimeSeriesData[target.Target], qr.Range.From, qr.Range.To))
+				data := ftdc.TimeSeriesData[target.Target]
+				data.Target = GetShortLabel(data.Target)
+				tsData = append(tsData, FilterTimeSeriesData(data, qr.Range.From, qr.Range.To))
 			}
 		} else if target.Type == "table" {
+			var server ServerInfoDoc
+			b, _ := json.Marshal(ftdc.ServerInfo)
+			if err := json.Unmarshal(b, &server); err != nil {
+				continue
+			}
 			if target.Target == "host_info" {
 				headerList := []bson.M{}
-				headerList = append(headerList, bson.M{"text": "Configurations", "type": "string"})
-				var si ServerInfoDoc
-				b, _ := json.Marshal(ftdc.ServerInfo)
-				if err := json.Unmarshal(b, &si); err != nil {
-					rowList := [][]string{[]string{"Error", err.Error()}}
-					doc1 := bson.M{"columns": headerList, "type": "table", "rows": rowList}
-					tsData = append(tsData, doc1)
-					continue
-				}
 				rowList := [][]string{}
-				rowList = append(rowList, []string{fmt.Sprintf(`CPU: %v cores (%v)`, si.HostInfo.System.NumCores, si.HostInfo.System.CPUArch)})
-				// rowList = append(rowList, []string{"Hostname", si.HostInfo.System.Hostname})
-				rowList = append(rowList, []string{fmt.Sprintf(`Memory: %v`, gox.GetStorageSize(1024*1024*si.HostInfo.System.MemSizeMB))})
-				rowList = append(rowList, []string{si.HostInfo.OS.Type + " (" + si.HostInfo.OS.Version + ")"})
-				rowList = append(rowList, []string{si.HostInfo.OS.Name})
-				rowList = append(rowList, []string{fmt.Sprintf(`MongoDB v%v`, si.BuildInfo.Version)})
-				doc1 := bson.M{"columns": headerList, "type": "table", "rows": rowList}
-				tsData = append(tsData, doc1)
+				headerList = append(headerList, bson.M{"text": "Configurations", "type": "String"})
+				rowList = append(rowList, []string{fmt.Sprintf(`CPU: %v cores (%v)`, server.HostInfo.System.NumCores, server.HostInfo.System.CPUArch)})
+				if m.verbose == true {
+					rowList = append(rowList, []string{fmt.Sprintf(`Host: %v`, server.HostInfo.System.Hostname)})
+				}
+				rowList = append(rowList, []string{fmt.Sprintf(`Memory: %v`, gox.GetStorageSize(1024*1024*server.HostInfo.System.MemSizeMB))})
+				rowList = append(rowList, []string{server.HostInfo.OS.Type + " (" + server.HostInfo.OS.Version + ")"})
+				rowList = append(rowList, []string{server.HostInfo.OS.Name})
+				rowList = append(rowList, []string{fmt.Sprintf(`MongoDB v%v`, server.BuildInfo.Version)})
+				doc := bson.M{"columns": headerList, "type": "table", "rows": rowList}
+				tsData = append(tsData, doc)
+			} else if target.Target == "assessment" {
+				as := NewAssessment(server, ftdc)
+				as.SetVerbose(m.verbose)
+				tsData = append(tsData, as.GetAssessment(qr.Range.From, qr.Range.To))
 			}
 		}
 	}
@@ -361,4 +375,54 @@ func (m *Metrics) AddFTDCDetailStats(diag *DiagnosticData) {
 	if m.verbose == true {
 		log.Println("data points added for", doc.HostInfo.System.Hostname, ", time spent:", etm.Sub(btm).String())
 	}
+}
+
+// FilterTimeSeriesData returns partial data points if there are too many
+func FilterTimeSeriesData(tsData TimeSeriesDoc, from time.Time, to time.Time) TimeSeriesDoc {
+	var data = TimeSeriesDoc{Target: tsData.Target, DataPoints: [][]float64{}}
+	hours := int(to.Sub(from).Hours()) + 1
+	points := [][]float64{}
+	for i, v := range tsData.DataPoints {
+		tm := time.Unix(0, int64(v[1])*int64(time.Millisecond))
+		if (i%hours) != 0 || tm.After(to) || tm.Before(from) {
+			continue
+		}
+		points = append(points, v)
+	}
+	sample := 3600
+	denom := int(math.Round(float64(len(points)) / float64(sample)))
+	if len(points) > sample {
+		max := []float64{-1, 0}
+		min := []float64{10000000, 0}
+		num := 0.0
+		for i, point := range points {
+			num++
+			if point[0] >= max[0] {
+				max = point
+			}
+			if point[0] <= min[0] {
+				min = point
+			}
+			if i%denom == 0 {
+				if strings.HasPrefix(data.Target, "ticket_avail_") {
+					data.DataPoints = append(data.DataPoints, min)
+				} else {
+					data.DataPoints = append(data.DataPoints, max)
+				}
+				max = []float64{-1, point[1]}
+				min = []float64{1000000000, point[1]}
+				num = 0
+			}
+		}
+		if num > 0 {
+			if strings.HasPrefix(data.Target, "ticket_avail_") {
+				data.DataPoints = append(data.DataPoints, min)
+			} else {
+				data.DataPoints = append(data.DataPoints, max)
+			}
+		}
+	} else {
+		data.DataPoints = points
+	}
+	return data
 }

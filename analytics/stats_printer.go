@@ -296,7 +296,7 @@ func printWiredTigerCacheDetails(docs []ServerStatusDoc, span int) string {
 
 	lines = append(lines, "\n--- WiredTiger Cache Summary ---")
 	lines = append(lines, "+-------------------------+--------------+--------------+--------------+--------------+--------------+--------------+--------------+")
-	lines = append(lines, "|                         |              |              |              | Modified     | Unmodified   | PagesRead    | PagesWritten |")
+	lines = append(lines, "|                         |              |              |              | Modified     | Unmodified   | BytesRead    | BytesWritten |")
 	lines = append(lines, "|                         | MaxBytes     | Currently    | Tracked      | PagesEvicted | PagesEvicted | IntoCache    | FromCache    |")
 	lines = append(lines, "| Date/Time               | Configured   | InCache      | DirtyBytes   | per Minute   | per Minute   | per Minute   | per Minute   |")
 	lines = append(lines, "|-------------------------|--------------|--------------|--------------|--------------|--------------|--------------|--------------|")
@@ -316,8 +316,8 @@ func printWiredTigerCacheDetails(docs []ServerStatusDoc, span int) string {
 					stat2.WiredTiger.Cache.TrackedDirtyBytes,
 					float64(stat2.WiredTiger.Cache.ModifiedPagesEvicted-stat1.WiredTiger.Cache.ModifiedPagesEvicted)/minutes,
 					float64(stat2.WiredTiger.Cache.UnmodifiedPagesEvicted-stat1.WiredTiger.Cache.UnmodifiedPagesEvicted)/minutes,
-					float64(stat2.WiredTiger.Cache.PagesReadIntoCache-stat1.WiredTiger.Cache.PagesReadIntoCache)/minutes,
-					float64(stat2.WiredTiger.Cache.PagesWrittenFromCache-stat1.WiredTiger.Cache.PagesWrittenFromCache)/minutes))
+					float64(stat2.WiredTiger.Cache.BytesReadIntoCache-stat1.WiredTiger.Cache.BytesReadIntoCache)/minutes,
+					float64(stat2.WiredTiger.Cache.BytesWrittenFromCache-stat1.WiredTiger.Cache.BytesWrittenFromCache)/minutes))
 				stat1 = stat2
 			}
 		}

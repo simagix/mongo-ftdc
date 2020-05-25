@@ -85,27 +85,7 @@ func (d *DiagnosticData) GetEndPoints() []string {
 // DecodeDiagnosticData decodes FTDC data files
 func (d *DiagnosticData) DecodeDiagnosticData(filenames []string) error {
 	var err error
-	var fi os.FileInfo
-	fnames := []string{}
-
-	for _, filename := range filenames {
-		if fi, err = os.Stat(filename); err != nil {
-			return err
-		}
-		switch mode := fi.Mode(); {
-		case mode.IsDir():
-			files, _ := ioutil.ReadDir(filename)
-			for _, file := range files {
-				if file.IsDir() == false &&
-					(strings.HasPrefix(file.Name(), "metrics.") || strings.HasPrefix(file.Name(), "keyhole_stats.")) {
-					fnames = append(fnames, filename+"/"+file.Name())
-				}
-			}
-		case mode.IsRegular():
-			fnames = append(fnames, filename)
-		}
-	}
-
+	fnames := GetMetricsFilenames(filenames)
 	if err = d.readDiagnosticFiles(fnames); err != nil {
 		return err
 	}
@@ -115,16 +95,16 @@ func (d *DiagnosticData) DecodeDiagnosticData(filenames []string) error {
 		t := time.Now().Unix() * 1000
 		minute := int64(60) * 1000
 		d.endpoints = append(d.endpoints, fmt.Sprintf(analyticsEndpoint, t, t+(10*minute)))
-		d.endpoints = append(d.endpoints, fmt.Sprintf(disksEndpoint, t, t+(10*minute)))
+		// d.endpoints = append(d.endpoints, fmt.Sprintf(disksEndpoint, t, t+(10*minute)))
 	} else {
 		log.Printf("Stats from %v to %v\n", d.ServerStatusList[0].LocalTime.Format("2006-01-02T15:04:05Z"),
 			d.ServerStatusList[len(d.ServerStatusList)-1].LocalTime.Format("2006-01-02T15:04:05Z"))
 		d.endpoints = append(d.endpoints, fmt.Sprintf(analyticsEndpoint,
 			d.ServerStatusList[0].LocalTime.Unix()*1000,
 			d.ServerStatusList[len(d.ServerStatusList)-1].LocalTime.Unix()*1000))
-		d.endpoints = append(d.endpoints, fmt.Sprintf(disksEndpoint,
-			d.ServerStatusList[0].LocalTime.Unix()*1000,
-			d.ServerStatusList[len(d.ServerStatusList)-1].LocalTime.Unix()*1000))
+		// d.endpoints = append(d.endpoints, fmt.Sprintf(disksEndpoint,
+		// 	d.ServerStatusList[0].LocalTime.Unix()*1000,
+		// 	d.ServerStatusList[len(d.ServerStatusList)-1].LocalTime.Unix()*1000))
 	}
 	return nil
 }
