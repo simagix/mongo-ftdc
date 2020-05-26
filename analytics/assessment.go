@@ -42,9 +42,9 @@ func (as *Assessment) GetAssessment(from time.Time, to time.Time) map[string]int
 		for i := 0; i < as.blocks; i++ {
 			headerList = append(headerList, map[string]string{"text": "Metric", "type": "Number"})
 			headerList = append(headerList, map[string]string{"text": "Score", "type": "Number"})
-			headerList = append(headerList, map[string]string{"text": "Min", "type": "Number"})
-			headerList = append(headerList, map[string]string{"text": "Avg", "type": "Number"})
-			headerList = append(headerList, map[string]string{"text": "Max", "type": "Number"})
+			headerList = append(headerList, map[string]string{"text": "p5", "type": "Number"})
+			headerList = append(headerList, map[string]string{"text": "Median", "type": "Number"})
+			headerList = append(headerList, map[string]string{"text": "p95", "type": "Number"})
 		}
 		var arr []string
 		mmap := map[string][]string{}
@@ -132,6 +132,10 @@ func (as *Assessment) getStatsArrayByValues(metric string, min float64, avg floa
 }
 
 func (as *Assessment) getStatsByData(data TimeSeriesDoc, from time.Time, to time.Time) (float64, float64, float64) {
+	return as.getMedianStatsByData(data, from, to)
+}
+
+func (as *Assessment) getMeanStatsByData(data TimeSeriesDoc, from time.Time, to time.Time) (float64, float64, float64) {
 	stats := FilterTimeSeriesData(data, from, to)
 	min := 1000000.0
 	avg := 0.0
@@ -155,6 +159,25 @@ func (as *Assessment) getStatsByData(data TimeSeriesDoc, from time.Time, to time
 	}
 	avg = sum / float64(len(arr))
 	return min, avg, max
+}
+
+func (as *Assessment) getMedianStatsByData(data TimeSeriesDoc, from time.Time, to time.Time) (float64, float64, float64) {
+	stats := FilterTimeSeriesData(data, from, to)
+	if len(stats.DataPoints) == 0 {
+		return math.NaN(), math.NaN(), math.NaN()
+	}
+	arr := []float64{}
+	for _, dp := range stats.DataPoints {
+		arr = append(arr, dp[0])
+	}
+	sort.Slice(arr, func(i int, j int) bool {
+		return arr[i] < arr[j]
+	})
+	samples := float64(len(arr) + 1)
+	p5 := int(samples * .05)
+	median := int(samples * .5)
+	p95 := int(samples * .95)
+	return arr[p5], arr[median], arr[p95]
 }
 
 func (as *Assessment) getScore(metric string, min float64, avg float64, max float64) string {
