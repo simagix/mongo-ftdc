@@ -68,6 +68,8 @@ func NewMetrics() *Metrics {
 	m := Metrics{}
 	http.HandleFunc("/grafana", gox.Cors(m.Handler))
 	http.HandleFunc("/grafana/", gox.Cors(m.Handler))
+	http.HandleFunc("/scores", gox.Cors(m.Handler))
+	http.HandleFunc("/scores/", gox.Cors(m.Handler))
 	return &m
 }
 
@@ -153,6 +155,8 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 		m.search(w, r)
 	} else if r.URL.Path[1:] == "grafana/dir" {
 		m.readDirectory(w, r)
+	} else if strings.HasPrefix(r.URL.Path, "/scores/") {
+		fmt.Fprintf(w, getHTML(r.URL.Path[9:]))
 	} else {
 		json.NewEncoder(w).Encode(bson.M{"ok": 1, "message": "hello ftdc!"})
 	}

@@ -13,6 +13,8 @@ services:
   ftdc:
     image: simagix/ftdc
     hostname: ftdc
+    ports:
+      - "5408:5408"
     volumes:
       - ./diagnostic.data:/diagnostic.data
     command: /simple_json /diagnostic.data
