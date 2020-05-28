@@ -29,6 +29,7 @@ type Metrics struct {
 	sync.RWMutex
 	endpoints []string
 	ftdcStats FTDCStats
+	latest    int // latest n files
 	verbose   bool
 }
 
@@ -79,6 +80,9 @@ const disksEndpoint = `/d/simagix-grafana-disks/mongodb-disks-stats?orgId=1&from
 // SetVerbose sets verbose mode
 func (m *Metrics) SetVerbose(verbose bool) { m.verbose = verbose }
 
+// SetLatest sets latest
+func (m *Metrics) SetLatest(latest int) { m.latest = latest }
+
 // ProcessFiles reads metrics files/data
 func (m *Metrics) ProcessFiles(filenames []string) error {
 	hostname, _ := os.Hostname()
@@ -91,6 +95,9 @@ func (m *Metrics) ProcessFiles(filenames []string) error {
 		endpoint := fmt.Sprintf(analyticsEndpoint, t, t+(10*minute))
 		log.Println(fmt.Sprintf("http://localhost:%d%v", port, endpoint))
 		return errors.New("no available data files found")
+	}
+	if m.latest > 0 && m.latest < len(filenames) {
+		filenames = filenames[len(filenames)-m.latest:]
 	}
 	if hostname == "ftdc" { // from docker-compose
 		port = 3030
@@ -383,19 +390,39 @@ func (m *Metrics) AddFTDCDetailStats(diag *DiagnosticData) {
 
 // FilterTimeSeriesData returns partial data points if there are too many
 func FilterTimeSeriesData(tsData TimeSeriesDoc, from time.Time, to time.Time) TimeSeriesDoc {
+	seconds := 3600
+	if len(tsData.DataPoints) <= seconds {
+		return tsData
+	}
 	var data = TimeSeriesDoc{Target: tsData.Target, DataPoints: [][]float64{}}
-	hours := int(to.Sub(from).Hours()) + 1
 	points := [][]float64{}
-	for i, v := range tsData.DataPoints {
+	b := 0
+	for i := 0; i < len(tsData.DataPoints); i += 10 {
+		tm := time.Unix(0, int64(tsData.DataPoints[i][1])*int64(time.Millisecond))
+		b = i
+		if tm.Before(from) == true {
+			continue
+		}
+		break
+	}
+	e := len(tsData.DataPoints) - 1
+	for i := len(tsData.DataPoints) - 1; i >= 0; i -= 10 {
+		tm := time.Unix(0, int64(tsData.DataPoints[i][1])*int64(time.Millisecond))
+		e = i
+		if tm.After(to) {
+			continue
+		}
+		break
+	}
+	for _, v := range tsData.DataPoints[b:e] {
 		tm := time.Unix(0, int64(v[1])*int64(time.Millisecond))
-		if (i%hours) != 0 || tm.After(to) || tm.Before(from) {
+		if tm.After(to) || tm.Before(from) {
 			continue
 		}
 		points = append(points, v)
 	}
-	sample := 3600
-	denom := int(math.Round(float64(len(points)) / float64(sample)))
-	if len(points) > sample {
+	if len(points) > seconds {
+		denom := int(math.Round(float64(len(points)) / float64(seconds)))
 		max := []float64{-1, 0}
 		min := []float64{10000000, 0}
 		num := 0.0

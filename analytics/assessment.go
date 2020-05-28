@@ -190,8 +190,8 @@ func (as *Assessment) getScore(metric string, p1 float64, median float64, p95 fl
 	} else if strings.HasPrefix(metric, "disku_") { // under 70% is good
 		score = GetScoreByRange(p95, 50, 90)
 	} else if strings.HasPrefix(metric, "iops_") { // median:p95 ratio
-		if p95 == 0 || median == 0 {
-			return 100
+		if p95 < 100 {
+			return score
 		}
 		u := p95 / median
 		score = GetScoreByRange(u, 2, 4)

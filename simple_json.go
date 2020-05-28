@@ -15,12 +15,14 @@ import (
 )
 
 func main() {
+	latest := flag.Int("latest", 10, "latest n files")
 	port := flag.Int("port", 5408, "port number")
 	verbose := flag.Bool("v", false, "verbose")
 	flag.Parse()
 	flagset := make(map[string]bool)
 	flag.Visit(func(f *flag.Flag) { flagset[f.Name] = true })
 	metrics := analytics.NewMetrics()
+	metrics.SetLatest(*latest)
 	metrics.SetVerbose(*verbose)
 	metrics.ProcessFiles(flag.Args())
 	addr := fmt.Sprintf(":%d", *port)

@@ -12,4 +12,4 @@ WORKDIR /home/simagix
 COPY --from=builder /go/src/github.com/simagix/mongo-ftdc/simple_json /
 WORKDIR /home/simagix
 RUN mkdir diagnostic.data
-CMD ["/simple_json", "diagnostic.data/"]
+CMD ["/simple_json", "--latest", "3", "diagnostic.data/"]
