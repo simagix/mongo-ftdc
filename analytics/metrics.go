@@ -395,32 +395,9 @@ func FilterTimeSeriesData(tsData TimeSeriesDoc, from time.Time, to time.Time) Ti
 		return tsData
 	}
 	var data = TimeSeriesDoc{Target: tsData.Target, DataPoints: [][]float64{}}
-	points := [][]float64{}
-	b := 0
-	for i := 0; i < len(tsData.DataPoints); i += 10 {
-		tm := time.Unix(0, int64(tsData.DataPoints[i][1])*int64(time.Millisecond))
-		b = i
-		if tm.Before(from) == true {
-			continue
-		}
-		break
-	}
-	e := len(tsData.DataPoints) - 1
-	for i := len(tsData.DataPoints) - 1; i >= 0; i -= 10 {
-		tm := time.Unix(0, int64(tsData.DataPoints[i][1])*int64(time.Millisecond))
-		e = i
-		if tm.After(to) {
-			continue
-		}
-		break
-	}
-	for _, v := range tsData.DataPoints[b:e] {
-		tm := time.Unix(0, int64(v[1])*int64(time.Millisecond))
-		if tm.After(to) || tm.Before(from) {
-			continue
-		}
-		points = append(points, v)
-	}
+	fidx := findClosestDataPointIndex(tsData.DataPoints, float64(from.UnixNano()/1000000))
+	eidx := findClosestDataPointIndex(tsData.DataPoints, float64(to.UnixNano()/1000000))
+	points := tsData.DataPoints[fidx:eidx]
 	if len(points) > seconds {
 		denom := int(math.Round(float64(len(points)) / float64(seconds)))
 		max := []float64{-1, 0}
@@ -456,4 +433,41 @@ func FilterTimeSeriesData(tsData TimeSeriesDoc, from time.Time, to time.Time) Ti
 		data.DataPoints = points
 	}
 	return data
+}
+
+func findClosestDataPointIndex(arr [][]float64, target float64) int {
+	n := len(arr)
+	if target <= arr[0][1] {
+		return 0
+	}
+	if target >= arr[n-1][1] {
+		return n - 1
+	}
+	i := 0
+	j := n
+	mid := 0
+	for i < j {
+		mid = (i + j) / 2
+		if arr[mid][1] == target {
+			return mid
+		}
+		if target < arr[mid][1] {
+			if mid > 0 && target > arr[mid-1][1] {
+				if target-arr[mid-1][1] >= arr[mid][1] {
+					return mid
+				}
+				return mid - 1
+			}
+			j = mid
+		} else {
+			if mid < n-1 && target < arr[mid+1][1] {
+				if target-arr[mid-1][1] >= arr[mid][1] {
+					return mid
+				}
+				return mid - 1
+			}
+			i = mid + 1
+		}
+	}
+	return mid
 }

@@ -708,8 +708,8 @@
         "max": false,
         "min": false,
         "show": true,
-        "total": true,
-        "values": true
+        "total": false,
+        "values": false
       },
       "lines": true,
       "linewidth": 1,
@@ -771,7 +771,7 @@
           "logBase": 1,
           "max": null,
           "min": null,
-          "show": true
+          "show": false
         }
       ],
       "yaxis": {

@@ -24,7 +24,9 @@ func main() {
 	metrics := analytics.NewMetrics()
 	metrics.SetLatest(*latest)
 	metrics.SetVerbose(*verbose)
-	metrics.ProcessFiles(flag.Args())
+	if err := metrics.ProcessFiles(flag.Args()); err != nil {
+		log.Fatal(err)
+	}
 	addr := fmt.Sprintf(":%d", *port)
 	http.HandleFunc("/", gox.Cors(handler))
 	log.Fatal(http.ListenAndServe(addr, nil))
