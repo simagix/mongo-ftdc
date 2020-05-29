@@ -21,7 +21,7 @@ type Assessment struct {
 type metricStats struct {
 	label  string
 	median float64
-	p1     float64
+	p5     float64
 	p95    float64
 	score  int
 }
@@ -68,16 +68,16 @@ func (as *Assessment) GetAssessment(from time.Time, to time.Time) map[string]int
 			}
 		}
 		for k, v := range as.stats.DiskStats {
-			p1, median, p95 := as.getStatsByData(v.IOPS, from, to)
+			p5, median, p95 := as.getStatsByData(v.IOPS, from, to)
 			if p95 == 0 {
 				continue
 			}
-			m := as.getStatsArrayByValues("iops_"+k, p1, median, p95)
+			m := as.getStatsArrayByValues("iops_"+k, p5, median, p95)
 			if m.score < 101 || as.verbose {
 				marr = append(marr, m)
 			}
-			p1, median, p95 = as.getStatsByData(v.Utilization, from, to)
-			m = as.getStatsArrayByValues("disku_"+k, p1, median, p95)
+			p5, median, p95 = as.getStatsByData(v.Utilization, from, to)
+			m = as.getStatsArrayByValues("disku_"+k, p5, median, p95)
 			if m.score < 101 || as.verbose {
 				marr = append(marr, m)
 			}
@@ -93,7 +93,7 @@ func (as *Assessment) GetAssessment(from time.Time, to time.Time) map[string]int
 		})
 		arr := []interface{}{}
 		for _, v := range marr {
-			arr = append(arr, []interface{}{v.label, v.score, v.p1, v.median, v.p95}...)
+			arr = append(arr, []interface{}{v.label, v.score, v.p5, v.median, v.p95}...)
 			if len(arr) == 5*as.blocks {
 				rowList = append(rowList, arr)
 				arr = []interface{}{}
@@ -110,11 +110,11 @@ func (as *Assessment) GetAssessment(from time.Time, to time.Time) map[string]int
 }
 
 func (as *Assessment) getStatsArray(metric string, from time.Time, to time.Time) metricStats {
-	p1, median, p95 := as.getStatsByData(as.stats.TimeSeriesData[metric], from, to)
-	return as.getStatsArrayByValues(metric, p1, median, p95)
+	p5, median, p95 := as.getStatsByData(as.stats.TimeSeriesData[metric], from, to)
+	return as.getStatsArrayByValues(metric, p5, median, p95)
 }
 
-func (as *Assessment) getStatsArrayByValues(metric string, p1 float64, median float64, p95 float64) metricStats {
+func (as *Assessment) getStatsArrayByValues(metric string, p5 float64, median float64, p95 float64) metricStats {
 	var score = 101
 	label := metric
 	if strings.HasSuffix(label, "modified_evicted") {
@@ -127,21 +127,21 @@ func (as *Assessment) getStatsArrayByValues(metric string, p1 float64, median fl
 		} else if metric == "wt_cache_dirty" { //5% to 20%
 			score = GetScoreByRange(u, 5, 20)
 		}
-		return metricStats{label: label + " %", score: score, p1: math.Round(100 * p1 / as.wtCacheMax),
+		return metricStats{label: label + " %", score: score, p5: math.Round(100 * p5 / as.wtCacheMax),
 			median: math.Round(100 * median / as.wtCacheMax), p95: math.Round(100 * p95 / as.wtCacheMax)}
 	} else if as.serverInfo.HostInfo.System.MemSizeMB > 0 && metric == "mem_resident" {
 		total := float64(as.serverInfo.HostInfo.System.MemSizeMB) / 1024
 		u := 100 * p95 / total
 		score = GetScoreByRange(u, 70, 90)
-		return metricStats{label: label + " %", score: score, p1: math.Round(100 * p1 / total),
+		return metricStats{label: label + " %", score: score, p5: math.Round(100 * p5 / total),
 			median: math.Round(100 * median / total), p95: math.Round(100 * p95 / total)}
 	}
-	score = as.getScore(metric, p1, median, p95)
+	score = as.getScore(metric, p5, median, p95)
 	if strings.HasPrefix(metric, "cpu_") || strings.HasPrefix(metric, "disku_") {
-		return metricStats{label: label + " %", score: score, p1: math.Round(p1),
+		return metricStats{label: label + " %", score: score, p5: math.Round(p5),
 			median: math.Round(median), p95: math.Round(p95)}
 	}
-	return metricStats{label: label, score: score, p1: math.Round(p1),
+	return metricStats{label: label, score: score, p5: math.Round(p5),
 		median: math.Round(median), p95: math.Round(p95)}
 }
 
@@ -171,7 +171,7 @@ func (as *Assessment) getMedianStatsByData(data TimeSeriesDoc, from time.Time, t
 	return arr[p5], arr[median], arr[p95]
 }
 
-func (as *Assessment) getScore(metric string, p1 float64, median float64, p95 float64) int {
+func (as *Assessment) getScore(metric string, p5 float64, median float64, p95 float64) int {
 	score := 101
 	if median < 1 {
 		return score
@@ -182,7 +182,7 @@ func (as *Assessment) getScore(metric string, p1 float64, median float64, p95 fl
 	} else if metric == "conns_created/s" { // 120 conns created per minute, 2/second
 		score = GetScoreByRange(median, 0, 2)
 	} else if metric == "cpu_idle" {
-		score = 100 - GetScoreByRange(p1, 50, 80)
+		score = 100 - GetScoreByRange(p5, 50, 80)
 	} else if metric == "cpu_iowait" || metric == "cpu_system" { // 5% - 15% io_wait
 		score = GetScoreByRange(p95, 5, 15)
 	} else if metric == "cpu_user" { // under 50% is good
@@ -224,7 +224,7 @@ func (as *Assessment) getScore(metric string, p1 float64, median float64, p95 fl
 	} else if metric == "scan_sort" { // 1 k sorted in mem
 		score = GetScoreByRange(p95, 0, 1000)
 	} else if metric == "ticket_avail_read" || metric == "ticket_avail_write" {
-		score = int(100 * p1 / 128)
+		score = int(100 * p5 / 128)
 	} else if metric == "wt_modified_evicted" || metric == "wt_unmodified_evicted" {
 		pages := .05 * as.wtCacheMax * (1024 * 1024 * 1024) / (4 * 1024) // 5% of WiredTiger cache
 		score = GetScoreByRange(p95, pages, 2*pages)
