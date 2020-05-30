@@ -36,10 +36,11 @@ type Metrics struct {
 // FTDCStats FTDC stats
 type FTDCStats struct {
 	DiskStats         map[string]DiskStats
+	MaxWTCache        float64
 	ReplicationLags   map[string]TimeSeriesDoc
 	ReplSetLegends    []string
 	ReplSetStatusList []ReplSetStatusDoc
-	ServerInfo        interface{}
+	ServerInfo        ServerInfoDoc
 	ServerStatusList  []ServerStatusDoc
 	SystemMetricsList []SystemMetricsDoc
 	TimeSeriesData    map[string]TimeSeriesDoc
@@ -143,7 +144,6 @@ func (m *Metrics) readProcessedFTDC(infile string) error {
 	if err = dec.Decode(&m.ftdcStats); err != nil {
 		return err
 	}
-
 	points := m.ftdcStats.TimeSeriesData["wt_cache_used"].DataPoints
 	tm1 := time.Unix(0, int64(points[0][1])*int64(time.Millisecond)).Unix() * 1000
 	tm2 := time.Unix(0, int64(points[len(points)-1][1])*int64(time.Millisecond)).Unix() * 1000
@@ -156,16 +156,16 @@ func (m *Metrics) readProcessedFTDC(infile string) error {
 
 // Handler handle HTTP requests
 func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path[1:] == "grafana/query" {
+	if r.URL.Path == "/grafana/query" {
 		m.query(w, r)
-	} else if r.URL.Path[1:] == "grafana/search" {
+	} else if r.URL.Path == "/grafana/search" {
 		m.search(w, r)
-	} else if r.URL.Path[1:] == "grafana/dir" {
+	} else if r.URL.Path == "/grafana/dir" {
 		m.readDirectory(w, r)
 	} else if strings.HasPrefix(r.URL.Path, "/scores/") {
-		fmt.Fprintf(w, getHTML(r.URL.Path[9:]))
+		fmt.Fprintf(w, GetFormulaHTML(r.URL.Path[9:]))
 	} else {
-		json.NewEncoder(w).Encode(bson.M{"ok": 1, "message": "hello ftdc!"})
+		json.NewEncoder(w).Encode(bson.M{"ok": 1, "message": "hello mongo-ftdc!"})
 	}
 }
 
@@ -260,27 +260,25 @@ func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
 				tsData = append(tsData, FilterTimeSeriesData(data, qr.Range.From, qr.Range.To))
 			}
 		} else if target.Type == "table" {
-			var server ServerInfoDoc
-			b, _ := json.Marshal(ftdc.ServerInfo)
-			if err := json.Unmarshal(b, &server); err != nil {
-				continue
-			}
 			if target.Target == "host_info" {
 				headerList := []bson.M{}
 				rowList := [][]string{}
 				headerList = append(headerList, bson.M{"text": "Configurations", "type": "String"})
-				rowList = append(rowList, []string{fmt.Sprintf(`CPU: %v cores (%v)`, server.HostInfo.System.NumCores, server.HostInfo.System.CPUArch)})
+				rowList = append(rowList, []string{fmt.Sprintf(`CPU: %v cores (%v)`,
+					m.ftdcStats.ServerInfo.HostInfo.System.NumCores,
+					m.ftdcStats.ServerInfo.HostInfo.System.CPUArch)})
 				if m.verbose == true {
-					rowList = append(rowList, []string{fmt.Sprintf(`Host: %v`, server.HostInfo.System.Hostname)})
+					rowList = append(rowList, []string{fmt.Sprintf(`Host: %v`, m.ftdcStats.ServerInfo.HostInfo.System.Hostname)})
 				}
-				rowList = append(rowList, []string{fmt.Sprintf(`Memory: %v`, gox.GetStorageSize(1024*1024*server.HostInfo.System.MemSizeMB))})
-				rowList = append(rowList, []string{server.HostInfo.OS.Type + " (" + server.HostInfo.OS.Version + ")"})
-				rowList = append(rowList, []string{server.HostInfo.OS.Name})
-				rowList = append(rowList, []string{fmt.Sprintf(`MongoDB v%v`, server.BuildInfo.Version)})
+				rowList = append(rowList, []string{fmt.Sprintf(`Memory: %v`,
+					gox.GetStorageSize(1024*1024*m.ftdcStats.ServerInfo.HostInfo.System.MemSizeMB))})
+				rowList = append(rowList, []string{m.ftdcStats.ServerInfo.HostInfo.OS.Type + " (" + m.ftdcStats.ServerInfo.HostInfo.OS.Version + ")"})
+				rowList = append(rowList, []string{m.ftdcStats.ServerInfo.HostInfo.OS.Name})
+				rowList = append(rowList, []string{fmt.Sprintf(`MongoDB v%v`, m.ftdcStats.ServerInfo.BuildInfo.Version)})
 				doc := bson.M{"columns": headerList, "type": "table", "rows": rowList}
 				tsData = append(tsData, doc)
 			} else if target.Target == "assessment" {
-				as := NewAssessment(server, ftdc)
+				as := NewAssessment(ftdc)
 				as.SetVerbose(m.verbose)
 				tsData = append(tsData, as.GetAssessment(qr.Range.From, qr.Range.To))
 			}
@@ -340,7 +338,7 @@ func (m *Metrics) AddFTDCDetailStats(diag *DiagnosticData) {
 		}
 	}
 
-	ftdc.ServerInfo = diag.ServerInfo
+	b, _ := json.Marshal(diag.ServerInfo)
 	btm := time.Now()
 	var wiredTigerTSD map[string]TimeSeriesDoc
 	var replicationTSD map[string]TimeSeriesDoc
@@ -379,12 +377,11 @@ func (m *Metrics) AddFTDCDetailStats(diag *DiagnosticData) {
 	for k, v := range systemMetricsTSD {
 		ftdc.TimeSeriesData[k] = v
 	}
+	json.Unmarshal(b, &ftdc.ServerInfo)
+	m.ftdcStats.MaxWTCache = m.ftdcStats.TimeSeriesData["wt_cache_max"].DataPoints[0][0]
 	etm := time.Now()
-	var doc ServerInfoDoc
-	b, _ := json.Marshal(ftdc.ServerInfo)
-	json.Unmarshal(b, &doc)
 	if m.verbose == true {
-		log.Println("data points added for", doc.HostInfo.System.Hostname, ", time spent:", etm.Sub(btm).String())
+		log.Println("data points added for", m.ftdcStats.ServerInfo.HostInfo.System.Hostname, ", time spent:", etm.Sub(btm).String())
 	}
 }
 
@@ -435,6 +432,7 @@ func FilterTimeSeriesData(tsData TimeSeriesDoc, from time.Time, to time.Time) Ti
 	return data
 }
 
+// perform binary search
 func findClosestDataPointIndex(arr [][]float64, target float64) int {
 	n := len(arr)
 	if target <= arr[0][1] {

@@ -3,11 +3,15 @@
 package analytics
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 )
 
 // GetMetricsFilenames gets metrics or keyhole_stats filesnames
@@ -85,7 +89,8 @@ func GetShortLabel(label string) string {
 	return label
 }
 
-func getHTML(metric string) string {
+// GetFormulaHTML returns scoring formula
+func GetFormulaHTML(metric string) string {
 	html := `
 	<!DOCTYPE html>
 	<html lang="en">
@@ -166,41 +171,22 @@ func getHTML(metric string) string {
 	</head>
 	<body><h3>Scores:</h3>
 	<table>
-	<tr><th>Metric</th><th>Formula</th><th>Acceptable</th><th>High</th></tr>
-	<tr><td class='rowtitle'>conns_created/s</td><td>conns_created/s</td><td align='right'>0</td><td align='right'>2</td></tr>
-	<tr><td class='rowtitle'>conns_current</td><td>1MB*(p95 of conns_current)/RAM</td><td align='right'>5%%</td><td align='right'>20%%</td></tr>
-
-	<tr><td class='rowtitle'>cpu_idle</td><td>p5 of cpu_idle</td><td align='right'>20%%</td><td align='right'>50%%</td></tr>
-	<tr><td class='rowtitle'>cpu_iowait</td><td>p95 of cpu_iowait</td><td align='right'>5%%</td><td align='right'>15%%</td></tr>
-	<tr><td class='rowtitle'>cpu_user</td><td>p95 of cpu_user</td><td align='right'>50%%</td><td align='right'>70%%</td></tr>
-	<tr><td class='rowtitle'>cpu_system</td><td>p95 of cpu_system</td><td align='right'>5%%</td><td align='right'>15%%</td></tr>
-
-	<tr><td class='rowtitle'>disku_&lt;dev&gt;</td><td>p95 of disku_&lt;dev&gt;</td><td align='right'>50%%</td><td align='right'>90%%</td></tr>
-	<tr><td class='rowtitle'>iops_&lt;dev&gt;</td><td>(p95 of iops_&lt;dev&gt;)/(avg of iops_&lt;dev&gt;)</td><td align='right'>2</td><td align='right'>4</td></tr>
-
-	<tr><td class='rowtitle'>lantency_command (ms)</td><td>p95 of lantency_command</td><td align='right'>20</td><td align='right'>100</td></tr>
-	<tr><td class='rowtitle'>lantency_read (ms)</td><td>p95 of lantency_read</td><td align='right'>20</td><td align='right'>100</td></tr>
-	<tr><td class='rowtitle'>lantency_write (ms)</td><td>p95 of lantency_write</td><td align='right'>20</td><td align='right'>100</td></tr>
-
-	<tr><td class='rowtitle'>mem_page_faults</td><td>p95 of mem_page_faults</td><td align='right'>10</td><td align='right'>20</td></tr>
-	<tr><td class='rowtitle'>mem_resident</td><td>mem_resident/RAM</td><td align='right'>70%%</td><td align='right'>90%%</td></tr>
-
-	<tr><td class='rowtitle'>ops_&lt;*&gt;</td><td>(ops_&lts*&gt;)</td><td align='right'>0</td><td align='right'>(# wt tickets)*(1s/2ms)</td></tr>
-
-	<tr><td class='rowtitle'>queued_read</td><td>p95 of queued_read</td><td align='right'># cores</td><td align='right'>5*(# cores)</td></tr>
-	<tr><td class='rowtitle'>queued_write</td><td>p95 of queued_write</td><td align='right'># cores</td><td align='right'>5*(# cores)</td></tr>
-
-	<tr><td class='rowtitle'>scan_keys</td><td>scan_keys</td><td align='right'>0</td><td align='right'>1 mil</td></tr>
-	<tr><td class='rowtitle'>scan_objects</td><td>max of [](scan_objects/scan_keys)</td><td align='right'>2</td><td align='right'>5</td></tr>
-	<tr><td class='rowtitle'>scan_sort</td><td>scan_sort</td><td align='right'>0</td><td align='right'>1,000</td></tr>
-
-	<tr><td class='rowtitle'>ticket_avail_read</td><td>(p5 of ticket_avail_read)/128</td><td align='right'>0%%</td><td align='right'>100%%</td></tr>
-	<tr><td class='rowtitle'>ticket_avail_write</td><td>(p5 of ticket_avail_write)/128</td><td align='right'>0%%</td><td align='right'>100%%</td></tr>
-
-	<tr><td class='rowtitle'>wt_cache_used</td><td>(p95 of wt_cache_used)/wt_cache_max</td><td align='right'>80%%</td><td align='right'>95%%</td></tr>
-	<tr><td class='rowtitle'>wt_cache_dirty</td><td>(p95 of wt_cache_dirty)/wt_cache_max</td><td align='right'>5%%</td><td align='right'>20%%</td></tr>
-	</table>
-	</body></html>
+	<tr><th>Metric</th><th>Formula</th><th>Low Watermark</th><th>High Watermark</th></tr>
 	`
+	p := message.NewPrinter(language.English)
+	keys := []string{}
+	for k := range FormulaMap {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i int, j int) bool {
+		return keys[i] < keys[j]
+	})
+	for i := range keys {
+		k := keys[i]
+		value := FormulaMap[k]
+		html += fmt.Sprintf(`<tr><td class='rowtitle'>%v</td><td>%v</td><td align='right'>%v</td><td align='right'>%v</td></tr>`,
+			value.label, value.formula, p.Sprintf(`%v`, value.low), p.Sprintf(`%v`, value.high))
+	}
+	html += `</table></body></html>`
 	return html
 }

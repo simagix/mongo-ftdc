@@ -9,13 +9,49 @@ import (
 	"time"
 )
 
+// ScoreFormula holds metric info
+type ScoreFormula struct {
+	formula string
+	label   string
+	low     int
+	high    int
+}
+
+// FormulaMap holds low and high watermarks
+var FormulaMap = map[string]ScoreFormula{
+	"conns_created/s":       ScoreFormula{label: "conns_created/s", formula: "conns_created/s", low: 0, high: 5},
+	"conns_current":         ScoreFormula{label: "conns_current %%", formula: "1MB*(p95 of conns_current)/RAM", low: 5, high: 20},
+	"cpu_idle":              ScoreFormula{label: "cpu_idle %%", formula: "p5 of cpu_idle", low: 50, high: 80},
+	"cpu_iowait":            ScoreFormula{label: "cpu_iowait %%", formula: "p95 of cpu_iowait", low: 5, high: 15},
+	"cpu_system":            ScoreFormula{label: "cpu_system %%", formula: "p95 of cpu_system", low: 5, high: 15},
+	"cpu_user":              ScoreFormula{label: "cpu_user %%", formula: "p95 of cpu_user", low: 50, high: 70},
+	"disku_":                ScoreFormula{label: "disku_&lt;dev&gt; %%", formula: "p95 of disku_&lt;dev&gt;", low: 50, high: 90},
+	"iops_":                 ScoreFormula{label: "iops_&lt;dev&gt;", formula: "(p95 of iops_&lt;dev&gt;)/(avg of iops_<dev>)", low: 2, high: 4},
+	"latency_command":       ScoreFormula{label: "latency_command (ms)", formula: "p95 of latency_command", low: 20, high: 100},
+	"latency_read":          ScoreFormula{label: "latency_read (ms)", formula: "p95 of latency_read", low: 20, high: 100},
+	"latency_write":         ScoreFormula{label: "latency_write (ms)", formula: "p95 of latency_write", low: 20, high: 100},
+	"mem_page_faults":       ScoreFormula{label: "mem_page_faults", formula: "p95 of mem_page_faults", low: 10, high: 20},
+	"mem_resident":          ScoreFormula{label: "mem_resident %%", formula: "mem_resident/RAM", low: 70, high: 90},
+	"ops_":                  ScoreFormula{label: "ops_&lt;op&gt;", formula: "ops_&lt;op&gt;", low: 0, high: 64000},
+	"queued_read":           ScoreFormula{label: "queued_read", formula: "p95 of queued_read", low: 1, high: 5},
+	"queued_write":          ScoreFormula{label: "queued_write", formula: "p95 of queued_write", low: 1, high: 5},
+	"scan_keys":             ScoreFormula{label: "scan_keys", formula: "scan_keys", low: 0, high: (1024 * 1024)},
+	"scan_objects":          ScoreFormula{label: "scan_objects", formula: "max of [](scan_objects/scan_keys)", low: 2, high: 5},
+	"scan_sort":             ScoreFormula{label: "scan_sort", formula: "scan_sort", low: 0, high: 1000},
+	"ticket_avail_read":     ScoreFormula{label: "ticket_avail_read %%", formula: "(p5 of ticket_avail_read)/128", low: 0, high: 100},
+	"ticket_avail_write":    ScoreFormula{label: "ticket_avail_write %%", formula: "(p5 of ticket_avail_write)/128", low: 0, high: 100},
+	"wt_cache_used":         ScoreFormula{label: "wt_cache_used %%", formula: "(p95 of wt_cache_used)/wt_cache_max", low: 80, high: 95},
+	"wt_cache_dirty":        ScoreFormula{label: "wt_cache_dirty %%", formula: "(p95 of wt_cache_dirty)/wt_cache_max", low: 5, high: 20},
+	"wt_modified_evicted":   ScoreFormula{label: "wt_modified_evicted  %%", formula: "(p95 of wt_modified_evicted)/(pages of wt_cache_max)", low: 5, high: 10},
+	"wt_unmodified_evicted": ScoreFormula{label: "wt_unmodified_evicted  %%", formula: "(p95 of wt_unmodified_evicted)/(pages of wt_cache_max)", low: 5, high: 10},
+}
+
 // Assessment stores timeserie data
 type Assessment struct {
-	blocks     int
-	serverInfo ServerInfoDoc
-	stats      FTDCStats
-	wtCacheMax float64
-	verbose    bool
+	blocks        int
+	maxCachePages int
+	stats         FTDCStats
+	verbose       bool
 }
 
 type metricStats struct {
@@ -27,11 +63,18 @@ type metricStats struct {
 }
 
 // NewAssessment returns assessment object
-func NewAssessment(serverInfo ServerInfoDoc, stats FTDCStats) *Assessment {
-	assessment := Assessment{blocks: 3, serverInfo: serverInfo, stats: stats}
-	if len(stats.TimeSeriesData["wt_cache_max"].DataPoints) > 0 {
-		assessment.wtCacheMax = stats.TimeSeriesData["wt_cache_max"].DataPoints[0][0]
-	}
+func NewAssessment(stats FTDCStats) *Assessment {
+	assessment := Assessment{blocks: 3, stats: stats}
+	cores := stats.ServerInfo.HostInfo.System.NumCores
+	m := FormulaMap["queued_read"]
+	m.low = cores
+	m.high = 5 * cores
+	FormulaMap["queued_read"] = m
+	m = FormulaMap["queued_write"]
+	m.low = cores
+	m.high = 5 * cores
+	FormulaMap["queued_write"] = m
+	assessment.maxCachePages = int(.05 * float64(stats.MaxWTCache) * (1024 * 1024 * 1024) / (4 * 1024)) // 5% of WiredTiger cache
 	return &assessment
 }
 
@@ -120,17 +163,17 @@ func (as *Assessment) getStatsArrayByValues(metric string, p5 float64, median fl
 	if strings.HasSuffix(label, "modified_evicted") {
 		label = strings.ReplaceAll(label, "modified_evicted", "mod_evict")
 	}
-	if as.wtCacheMax > 0 && (metric == "wt_cache_used" || metric == "wt_cache_dirty") {
-		u := 100 * p95 / as.wtCacheMax
+	if as.stats.MaxWTCache > 0 && (metric == "wt_cache_used" || metric == "wt_cache_dirty") {
+		u := 100 * p95 / float64(as.stats.MaxWTCache)
 		if metric == "wt_cache_used" { // 80% to 100%
 			score = GetScoreByRange(u, 80, 95)
-		} else if metric == "wt_cache_dirty" { //5% to 20%
+		} else if metric == "wt_cache_dirty" { // 5% to 20%
 			score = GetScoreByRange(u, 5, 20)
 		}
-		return metricStats{label: label + " %", score: score, p5: math.Round(100 * p5 / as.wtCacheMax),
-			median: math.Round(100 * median / as.wtCacheMax), p95: math.Round(100 * p95 / as.wtCacheMax)}
-	} else if as.serverInfo.HostInfo.System.MemSizeMB > 0 && metric == "mem_resident" {
-		total := float64(as.serverInfo.HostInfo.System.MemSizeMB) / 1024
+		return metricStats{label: label + " %", score: score, p5: math.Round(100 * p5 / float64(as.stats.MaxWTCache)),
+			median: math.Round(100 * median / float64(as.stats.MaxWTCache)), p95: math.Round(100 * p95 / float64(as.stats.MaxWTCache))}
+	} else if as.stats.ServerInfo.HostInfo.System.MemSizeMB > 0 && metric == "mem_resident" {
+		total := float64(as.stats.ServerInfo.HostInfo.System.MemSizeMB) / 1024
 		u := 100 * p95 / total
 		score = GetScoreByRange(u, 70, 90)
 		return metricStats{label: label + " %", score: score, p5: math.Round(100 * p5 / total),
@@ -173,38 +216,48 @@ func (as *Assessment) getMedianStatsByData(data TimeSeriesDoc, from time.Time, t
 
 func (as *Assessment) getScore(metric string, p5 float64, median float64, p95 float64) int {
 	score := 101
-	if median < 1 {
+	met := metric
+	if strings.HasPrefix(met, "disku_") {
+		met = "disku_"
+	} else if strings.HasPrefix(met, "iops_") {
+		met = "iops_"
+	} else if strings.HasPrefix(met, "ops_") {
+		met = "ops_"
+	}
+	if FormulaMap[met].label == "" {
 		return score
 	}
-	if metric == "conns_current" { // 5% to 20%
-		pct := 100 * p95 / float64(as.serverInfo.HostInfo.System.MemSizeMB)
-		score = GetScoreByRange(pct, 5, 20)
-	} else if metric == "conns_created/s" { // 120 conns created per minute, 2/second
-		score = GetScoreByRange(median, 0, 2)
+	lwm := float64(FormulaMap[met].low)
+	hwm := float64(FormulaMap[met].high)
+	if metric == "conns_created/s" { // 300 conns created per minute, 5/second
+		score = GetScoreByRange(median, lwm, hwm)
+	} else if metric == "conns_current" { // 5% to 20%
+		pct := 100 * p95 / float64(as.stats.ServerInfo.HostInfo.System.MemSizeMB)
+		score = GetScoreByRange(pct, lwm, hwm)
 	} else if metric == "cpu_idle" {
-		score = 100 - GetScoreByRange(p5, 50, 80)
+		score = 100 - GetScoreByRange(p5, lwm, hwm)
 	} else if metric == "cpu_iowait" || metric == "cpu_system" { // 5% - 15% io_wait
-		score = GetScoreByRange(p95, 5, 15)
+		score = GetScoreByRange(p95, lwm, hwm)
 	} else if metric == "cpu_user" { // under 50% is good
-		score = GetScoreByRange(p95, 50, 70)
-	} else if strings.HasPrefix(metric, "disku_") { // under 70% is good
-		score = GetScoreByRange(p95, 50, 90)
+		score = GetScoreByRange(p95, lwm, hwm)
+	} else if strings.HasPrefix(metric, "disku_") { // under 50% is good
+		score = GetScoreByRange(p95, lwm, hwm)
 	} else if strings.HasPrefix(metric, "iops_") { // median:p95 ratio
 		if p95 < 100 {
 			return score
 		}
 		u := p95 / median
-		score = GetScoreByRange(u, 2, 4)
-	} else if metric == "latency_command" || metric == "latency_read" || metric == "latency_write" { // 20ms is good
-		score = GetScoreByRange(p95, 20, 100)
+		score = GetScoreByRange(u, lwm, hwm)
+	} else if strings.HasPrefix(metric, "latency_") { // 20ms is good
+		score = GetScoreByRange(p95, lwm, hwm)
 	} else if metric == "mem_page_faults" { // 10 page faults
-		score = GetScoreByRange(p95, 10, 20)
+		score = GetScoreByRange(p95, lwm, hwm)
 	} else if strings.HasPrefix(metric, "ops_") { // 2ms an op
-		total := 500.0 * 128
-		score = GetScoreByRange(p95, 0, total)
-	} else if metric == "q_queued_read" || metric == "q_queued_write" {
-		cores := float64(as.serverInfo.HostInfo.System.NumCores)
-		score = GetScoreByRange(p95, cores, 5*cores)
+		score = GetScoreByRange(p95, lwm, hwm)
+	} else if strings.HasPrefix(metric, "q_queued_") {
+		score = GetScoreByRange(p95, lwm, hwm)
+	} else if metric == "scan_keys" { // 1 mil/sec key scanned
+		score = GetScoreByRange(p95, 0, 1024.0*1024)
 	} else if metric == "scan_objects" {
 		if p95 < 1000 {
 			return 100
@@ -218,16 +271,13 @@ func (as *Assessment) getScore(metric string, p5 float64, median float64, p95 fl
 				max = scale
 			}
 		}
-		score = GetScoreByRange(max, 2, 5)
-	} else if metric == "scan_keys" { // 1 mil/sec key scanned
-		score = GetScoreByRange(p95, 0, 1024.0*1024)
+		score = GetScoreByRange(max, lwm, hwm)
 	} else if metric == "scan_sort" { // 1 k sorted in mem
-		score = GetScoreByRange(p95, 0, 1000)
-	} else if metric == "ticket_avail_read" || metric == "ticket_avail_write" {
+		score = GetScoreByRange(p95, lwm, hwm)
+	} else if strings.HasPrefix(metric, "ticket_avail_") {
 		score = int(100 * p5 / 128)
 	} else if metric == "wt_modified_evicted" || metric == "wt_unmodified_evicted" {
-		pages := .05 * as.wtCacheMax * (1024 * 1024 * 1024) / (4 * 1024) // 5% of WiredTiger cache
-		score = GetScoreByRange(p95, pages, 2*pages)
+		score = GetScoreByRange(p95/float64(as.maxCachePages), lwm, hwm)
 	}
 	return score
 }
