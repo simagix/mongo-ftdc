@@ -161,7 +161,7 @@ func (as *Assessment) getStatsArrayByValues(metric string, p5 float64, median fl
 	var score = 101
 	label := metric
 	if strings.HasSuffix(label, "modified_evicted") {
-		label = strings.ReplaceAll(label, "modified_evicted", "mod_evict")
+		label = strings.ReplaceAll(label, "modified_evicted", "mod_evicted")
 	}
 	if as.stats.MaxWTCache > 0 && (metric == "wt_cache_used" || metric == "wt_cache_dirty") {
 		u := 100 * p95 / float64(as.stats.MaxWTCache)

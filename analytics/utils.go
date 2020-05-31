@@ -73,8 +73,10 @@ func GetShortLabel(label string) string {
 		label = label[4:]
 	} else if strings.HasPrefix(label, "ops_") {
 		label = label[4:]
-	} else if strings.HasPrefix(label, "q_") {
-		label = label[2:]
+	} else if strings.HasPrefix(label, "q_active_") {
+		label = label[9:]
+	} else if strings.HasPrefix(label, "q_queued_") {
+		label = label[9:]
 	} else if strings.HasPrefix(label, "scan_") {
 		label = label[5:]
 	} else if strings.HasPrefix(label, "ticket_") {
@@ -85,6 +87,9 @@ func GetShortLabel(label string) string {
 		label = label[9:]
 	} else if strings.HasPrefix(label, "wt_") {
 		label = label[3:]
+		if strings.HasSuffix(label, "_evicted") {
+			label = label[:len(label)-8]
+		}
 	}
 	return label
 }

@@ -443,7 +443,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "WiredTiger Cache Pages Eviction",
+      "title": "WiredTiger Cache Pages Evicted",
       "tooltip": {
         "shared": true,
         "sort": 0,
