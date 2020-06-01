@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 
@@ -29,17 +30,22 @@ func main() {
 		fmt.Println("mongo-ftdc", version)
 		os.Exit(0)
 	}
+	addr := fmt.Sprintf(":%d", *port)
+	if listener, err := net.Listen("tcp", addr); err != nil {
+		log.Fatal(err)
+	} else {
+		listener.Close()
+	}
 	metrics := analytics.NewMetrics()
 	metrics.SetLatest(*latest)
 	metrics.SetVerbose(*verbose)
 	if err := metrics.ProcessFiles(flag.Args()); err != nil {
 		log.Fatal(err)
 	}
-	addr := fmt.Sprintf(":%d", *port)
 	http.HandleFunc("/", gox.Cors(handler))
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(bson.M{"ok": 1, "message": "hello ftdc!"})
+	json.NewEncoder(w).Encode(bson.M{"ok": 1, "message": "hello mongo-ftdc!"})
 }
