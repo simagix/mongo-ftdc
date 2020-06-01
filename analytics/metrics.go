@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"math"
 	"net/http"
 	"os"
 	"sort"
@@ -387,45 +386,23 @@ func (m *Metrics) AddFTDCDetailStats(diag *DiagnosticData) {
 
 // FilterTimeSeriesData returns partial data points if there are too many
 func FilterTimeSeriesData(tsData TimeSeriesDoc, from time.Time, to time.Time) TimeSeriesDoc {
-	seconds := 3600
-	if len(tsData.DataPoints) <= seconds {
+	seconds := 1800.0 // .5 hour, no gain to have a higher number.  Grafana aggregates
+	if len(tsData.DataPoints) == 0 {
 		return tsData
 	}
 	var data = TimeSeriesDoc{Target: tsData.Target, DataPoints: [][]float64{}}
 	fidx := findClosestDataPointIndex(tsData.DataPoints, float64(from.UnixNano()/1000000))
 	eidx := findClosestDataPointIndex(tsData.DataPoints, float64(to.UnixNano()/1000000))
 	points := tsData.DataPoints[fidx:eidx]
-	if len(points) > seconds {
-		denom := int(math.Round(float64(len(points)) / float64(seconds)))
-		max := []float64{-1, 0}
-		min := []float64{10000000, 0}
-		num := 0.0
-		for i, point := range points {
-			num++
-			if point[0] >= max[0] {
-				max = point
-			}
-			if point[0] <= min[0] {
-				min = point
-			}
-			if i%denom == 0 {
-				if strings.HasPrefix(data.Target, "ticket_avail_") {
-					data.DataPoints = append(data.DataPoints, min)
-				} else {
-					data.DataPoints = append(data.DataPoints, max)
-				}
-				max = []float64{-1, point[1]}
-				min = []float64{1000000000, point[1]}
-				num = 0
-			}
+
+	if len(points) > int(seconds) {
+		length := float64(len(points) + 1)
+		samples := [][]float64{}
+		for i := 0.0; i < seconds; i++ { // for fast sampling
+			p := int(length * i / seconds)
+			samples = append(samples, points[p])
 		}
-		if num > 0 {
-			if strings.HasPrefix(data.Target, "ticket_avail_") {
-				data.DataPoints = append(data.DataPoints, min)
-			} else {
-				data.DataPoints = append(data.DataPoints, max)
-			}
-		}
+		data.DataPoints = samples
 	} else {
 		data.DataPoints = points
 	}

@@ -189,10 +189,6 @@ func (as *Assessment) getStatsArrayByValues(metric string, p5 float64, median fl
 }
 
 func (as *Assessment) getStatsByData(data TimeSeriesDoc, from time.Time, to time.Time) (float64, float64, float64) {
-	return as.getMedianStatsByData(data, from, to)
-}
-
-func (as *Assessment) getMedianStatsByData(data TimeSeriesDoc, from time.Time, to time.Time) (float64, float64, float64) {
 	stats := FilterTimeSeriesData(data, from, to)
 	if len(stats.DataPoints) == 0 {
 		return 0, 0, 0
