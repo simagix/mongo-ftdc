@@ -53,7 +53,7 @@ var wiredTigerChartsLegends = []string{
 	"wt_blkmgr_read", "wt_blkmgr_written", "wt_blkmgr_written_checkpoint",
 	"wt_cache_max", "wt_cache_used", "wt_cache_dirty",
 	"wt_modified_evicted", "wt_unmodified_evicted", "wt_cache_read_in", "wt_cache_written_from",
-	"ticket_avail_read", "ticket_avail_write",
+	"wt_dhandles_active", "ticket_avail_read", "ticket_avail_write",
 }
 var systemMetricsChartsLegends = []string{
 	"cpu_idle", "cpu_iowait", "cpu_nice", "cpu_softirq", "cpu_steal", "cpu_system", "cpu_user",
@@ -375,6 +375,10 @@ func getWiredTigerTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]T
 			x = timeSeriesData["wt_cache_dirty"]
 			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.Cache.TrackedDirtyBytes)/(1024*1024*1024), t))
 			timeSeriesData["wt_cache_dirty"] = x
+
+			x = timeSeriesData["wt_dhandles_active"]
+			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.DataHandle.Active), t))
+			timeSeriesData["wt_dhandles_active"] = x
 
 			x = timeSeriesData["ticket_avail_read"]
 			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.ConcurrentTransactions.Read.Available), t))

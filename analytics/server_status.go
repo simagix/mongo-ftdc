@@ -110,6 +110,12 @@ type WiredTigerCacheDoc struct {
 	TrackedDirtyBytes      int64 `json:"tracked dirty bytes in the cache" bson:"tracked dirty bytes in the cache"`
 }
 
+// WiredTigerDataHandleDoc contains db.serverStatus().wiredTiger.data-handle
+type WiredTigerDataHandleDoc struct {
+	Active int64 `json:"connection data handles currently active" bson:"connection data handles currently active"`
+	Size   int64 `json:"connection data handle size" bson:"connection data handle size"`
+}
+
 // ConcurrentTransactionsCountDoc contains db.serverStatus().wiredTiger.concurrentTransactions.[read|write]
 type ConcurrentTransactionsCountDoc struct {
 	Available    int64 `json:"available" bson:"available"`
@@ -129,6 +135,7 @@ type WiredTigerDoc struct {
 	BlockManager           WiredTigerBlockManagerDoc `json:"block-manager" bson:"block-manager"`
 	Cache                  WiredTigerCacheDoc        `json:"cache" bson:"cache"`
 	ConcurrentTransactions ConcurrentTransactionsDoc `json:"concurrentTransactions" bson:"concurrentTransactions"`
+	DataHandle             WiredTigerDataHandleDoc   `json:"data-handle" bson:"data-handle"`
 }
 
 // ConnectionsDoc contains db.serverStatus().connections

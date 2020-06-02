@@ -85,6 +85,8 @@ func GetShortLabel(label string) string {
 		label = label[10:]
 	} else if strings.HasPrefix(label, "wt_cache_") {
 		label = label[9:]
+	} else if strings.HasPrefix(label, "wt_dhandles_") {
+		label = label[12:]
 	} else if strings.HasPrefix(label, "wt_") {
 		label = label[3:]
 		if strings.HasSuffix(label, "_evicted") {

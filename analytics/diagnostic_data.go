@@ -59,6 +59,7 @@ func getServerStatusDataPoints(attribsMap map[string][]int64, i uint32) ServerSt
 	ss.WiredTiger.Cache.BytesWrittenFromCache = attribsMap["serverStatus/wiredTiger/cache/bytes written from cache"][i]
 	ss.WiredTiger.Cache.TrackedDirtyBytes = attribsMap["serverStatus/wiredTiger/cache/tracked dirty bytes in the cache"][i]
 	ss.WiredTiger.Cache.UnmodifiedPagesEvicted = attribsMap["serverStatus/wiredTiger/cache/unmodified pages evicted"][i]
+	ss.WiredTiger.DataHandle.Active = attribsMap["serverStatus/wiredTiger/data-handle/connection data handles currently active"][i]
 	ss.WiredTiger.ConcurrentTransactions.Read.Available = attribsMap["serverStatus/wiredTiger/concurrentTransactions/read/available"][i]
 	ss.WiredTiger.ConcurrentTransactions.Write.Available = attribsMap["serverStatus/wiredTiger/concurrentTransactions/write/available"][i]
 	return ss

@@ -42,6 +42,7 @@ var FormulaMap = map[string]ScoreFormula{
 	"ticket_avail_write":    ScoreFormula{label: "ticket_avail_write %%", formula: "(p5 of ticket_avail_write)/128", low: 0, high: 100},
 	"wt_cache_used":         ScoreFormula{label: "wt_cache_used %%", formula: "(p95 of wt_cache_used)/wt_cache_max", low: 80, high: 95},
 	"wt_cache_dirty":        ScoreFormula{label: "wt_cache_dirty %%", formula: "(p95 of wt_cache_dirty)/wt_cache_max", low: 5, high: 20},
+	"wt_dhandles_active":    ScoreFormula{label: "wt_dhandles_active", formula: "(p95 of wt_dhandles_active)", low: 16000, high: 20000},
 	"wt_modified_evicted":   ScoreFormula{label: "wt_modified_evicted  %%", formula: "(p95 of wt_modified_evicted)/(pages of wt_cache_max)", low: 5, high: 10},
 	"wt_unmodified_evicted": ScoreFormula{label: "wt_unmodified_evicted  %%", formula: "(p95 of wt_unmodified_evicted)/(pages of wt_cache_max)", low: 5, high: 10},
 }
@@ -272,6 +273,8 @@ func (as *Assessment) getScore(metric string, p5 float64, median float64, p95 fl
 		score = GetScoreByRange(p95, lwm, hwm)
 	} else if strings.HasPrefix(metric, "ticket_avail_") {
 		score = int(100 * p5 / 128)
+	} else if metric == "wt_dhandles_active" {
+		score = GetScoreByRange(p95, lwm, hwm)
 	} else if metric == "wt_modified_evicted" || metric == "wt_unmodified_evicted" {
 		score = GetScoreByRange(p95/float64(as.maxCachePages), lwm, hwm)
 	}

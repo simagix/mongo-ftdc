@@ -7,7 +7,7 @@ else
   dep ensure
 fi
 
-ver=1.0
+ver=1.0.1
 version="v${ver}-$(date "+%Y%m%d")"
 mkdir -p bin
 env CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.version=$version" -o bin/ftdc-osx-x64 simple_json.go
