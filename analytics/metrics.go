@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"sort"
@@ -255,7 +256,7 @@ func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
 				}
 			} else {
 				data := ftdc.TimeSeriesData[target.Target]
-				data.Target = GetShortLabel(data.Target)
+				data.Target = GetShortLabel(target.Target)
 				tsData = append(tsData, FilterTimeSeriesData(data, qr.Range.From, qr.Range.To))
 			}
 		} else if target.Type == "table" {
@@ -377,7 +378,9 @@ func (m *Metrics) AddFTDCDetailStats(diag *DiagnosticData) {
 		ftdc.TimeSeriesData[k] = v
 	}
 	json.Unmarshal(b, &ftdc.ServerInfo)
-	m.ftdcStats.MaxWTCache = m.ftdcStats.TimeSeriesData["wt_cache_max"].DataPoints[0][0]
+	if len(m.ftdcStats.TimeSeriesData["wt_cache_max"].DataPoints) > 0 && len(m.ftdcStats.TimeSeriesData["wt_cache_max"].DataPoints[0]) > 0 {
+		m.ftdcStats.MaxWTCache = m.ftdcStats.TimeSeriesData["wt_cache_max"].DataPoints[0][0]
+	}
 	etm := time.Now()
 	if m.verbose == true {
 		log.Println("data points added for", m.ftdcStats.ServerInfo.HostInfo.System.Hostname, ", time spent:", etm.Sub(btm).String())
@@ -394,6 +397,9 @@ func FilterTimeSeriesData(tsData TimeSeriesDoc, from time.Time, to time.Time) Ti
 	fidx := findClosestDataPointIndex(tsData.DataPoints, float64(from.UnixNano()/1000000))
 	eidx := findClosestDataPointIndex(tsData.DataPoints, float64(to.UnixNano()/1000000))
 	points := tsData.DataPoints[fidx:eidx]
+	if len(points) == 0 || math.IsNaN(points[0][0]) {
+		return data
+	}
 
 	if len(points) > int(seconds) {
 		length := float64(len(points) + 1)

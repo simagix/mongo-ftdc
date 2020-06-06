@@ -5,6 +5,7 @@ package analytics
 import (
 	"fmt"
 	"io/ioutil"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -48,6 +49,9 @@ func GetMetricsFilenames(filenames []string) []string {
 
 // GetScoreByRange gets score
 func GetScoreByRange(v float64, low float64, high float64) int {
+	if math.IsNaN(v) {
+		return 101
+	}
 	var score int
 	if v < low {
 		score = 100

@@ -232,6 +232,9 @@ func (as *Assessment) getScore(metric string, p5 float64, median float64, p95 fl
 		pct := 100 * p95 / float64(as.stats.ServerInfo.HostInfo.System.MemSizeMB)
 		score = GetScoreByRange(pct, lwm, hwm)
 	} else if metric == "cpu_idle" {
+		if math.IsNaN(p5) {
+			return score
+		}
 		score = 100 - GetScoreByRange(p5, lwm, hwm)
 	} else if metric == "cpu_iowait" || metric == "cpu_system" { // 5% - 15% io_wait
 		score = GetScoreByRange(p95, lwm, hwm)
