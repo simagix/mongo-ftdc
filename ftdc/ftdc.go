@@ -2,16 +2,11 @@
 
 package ftdc
 
-// Block - buffer holder
-type Block []byte
-
 // MetricsData -
 type MetricsData struct {
-	Buffer        Block
-	DocSize       uint32
-	NumAttribs    uint32
+	Block         []byte
+	DataPointsMap map[string][]uint64
 	NumDeltas     uint32
-	DataPointsMap map[string][]int64
 }
 
 // Metrics -

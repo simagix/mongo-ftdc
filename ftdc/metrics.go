@@ -12,23 +12,14 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-// ReadMetricsSummary read summary (first doc) of metrics
-func (m *Metrics) ReadMetricsSummary(buffer []byte) error {
-	return m.readMetrics(buffer, true)
-}
-
 // ReadAllMetrics reads all metrics
-func (m *Metrics) ReadAllMetrics(buffer []byte) error {
-	return m.readMetrics(buffer, false)
-}
-
-// readMetrics reads FTDC metrics from bytes buffer
-func (m *Metrics) readMetrics(buffer []byte, summaryOnly bool) error {
+func (m *Metrics) ReadAllMetrics(data *[]byte) error {
 	var err error
 	var pos uint32
 	var metricsData = []MetricsData{}
 	var md MetricsData
 	var r io.ReadCloser
+	buffer := *data
 
 	for {
 		if pos >= uint32(len(buffer)) {
@@ -53,17 +44,10 @@ func (m *Metrics) readMetrics(buffer []byte, summaryOnly bool) error {
 			if block, err = ioutil.ReadAll(r); err != nil {
 				return err
 			}
-
-			if summaryOnly == true {
-				r := bytes.NewReader(block)
-				md = MetricsData{DataPointsMap: map[string][]int64{}, Buffer: block, DocSize: GetUint32(r)}
-				metricsData = append(metricsData, md)
-			} else {
-				if md, err = m.decode(block); err != nil {
-					return err
-				}
-				metricsData = append(metricsData, md)
+			if md, err = m.decode(block); err != nil {
+				return err
 			}
+			metricsData = append(metricsData, md)
 		} else {
 			// log.Println("==>", out["type"])
 		}

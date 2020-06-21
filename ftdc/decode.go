@@ -18,13 +18,13 @@ const PathSeparator = "/" // path separator
 // Decode decodes MongoDB FTDC data
 func (m *Metrics) decode(buffer []byte) (MetricsData, error) {
 	var err error
-	var dp = MetricsData{DataPointsMap: map[string][]int64{}, Buffer: buffer}
+	var dp = MetricsData{DataPointsMap: map[string][]uint64{}}
 
 	r := bytes.NewReader(buffer)
-	dp.DocSize = GetUint32(r) // first bson document length
-	r.Seek(int64(dp.DocSize), io.SeekStart)
-	dp.NumAttribs = GetUint32(r) // 4 bytes # of keys
-	dp.NumDeltas = GetUint32(r)  // 4 bytes # of deltas
+	docSize := GetUint32(r) // first bson document length
+	r.Seek(int64(docSize), io.SeekStart)
+	numAttribs := GetUint32(r)  // 4 bytes # of keys
+	dp.NumDeltas = GetUint32(r) // 4 bytes # of deltas
 	ptr, _ := r.Seek(0, io.SeekCurrent)
 	r = bytes.NewReader(buffer[ptr:]) // reset reader to where deltas begin
 
@@ -37,17 +37,17 @@ func (m *Metrics) decode(buffer []byte) (MetricsData, error) {
 	// replSetGetStatus
 	// local.oplog.rs.stats
 	var docElem = bson.D{}
-	bson.Unmarshal(buffer[:dp.DocSize], &docElem) // first document
+	bson.Unmarshal(buffer[:docSize], &docElem) // first document
 	traverseDocElem(&attribsList, &dp.DataPointsMap, docElem, "")
 
-	if len(dp.DataPointsMap) != int(dp.NumAttribs) || len(attribsList) != int(dp.NumAttribs) {
+	if len(dp.DataPointsMap) != int(numAttribs) || len(attribsList) != int(numAttribs) {
 		return dp, errors.New("inconsistent FTDC data")
 	}
 
 	// deltas
 	// d where d > 0, return d
 	// 0d -> there are d number of zeros
-	var delta int64
+	var delta uint64
 	var zerosLeft uint64
 	for _, attr := range attribsList {
 		list := dp.DataPointsMap[attr]
@@ -57,7 +57,7 @@ func (m *Metrics) decode(buffer []byte) (MetricsData, error) {
 				delta = 0
 				zerosLeft--
 			} else {
-				delta = int64(Uvarint(r))
+				delta = Uvarint(r)
 				if delta == 0 {
 					zerosLeft = Uvarint(r)
 				}
@@ -67,10 +67,11 @@ func (m *Metrics) decode(buffer []byte) (MetricsData, error) {
 		}
 		dp.DataPointsMap[attr] = list
 	}
+	dp.Block = buffer[:docSize]
 	return dp, err
 }
 
-func traverseDocElem(attribsList *[]string, attribsMap *map[string][]int64, docElem interface{}, parentPath string) {
+func traverseDocElem(attribsList *[]string, attribsMap *map[string][]uint64, docElem interface{}, parentPath string) {
 	switch value := docElem.(type) {
 	case bson.A:
 		for i, v := range value {
@@ -78,11 +79,11 @@ func traverseDocElem(attribsList *[]string, attribsMap *map[string][]int64, docE
 			traverseDocElem(attribsList, attribsMap, v, fld)
 		}
 	case bool:
-		v := int64(0)
+		v := uint64(0)
 		if value == true {
 			v = 1
 		}
-		x := []int64{v}
+		x := []uint64{v}
 		(*attribsMap)[parentPath] = x
 		(*attribsList) = append((*attribsList), parentPath)
 	case bson.D:
@@ -96,27 +97,27 @@ func traverseDocElem(attribsList *[]string, attribsMap *map[string][]int64, docE
 		}
 	case primitive.Timestamp:
 		tKey := parentPath + "/t"
-		(*attribsMap)[tKey] = []int64{int64(0)}
+		(*attribsMap)[tKey] = []uint64{uint64(0)}
 		(*attribsList) = append((*attribsList), tKey)
 		iKey := parentPath + "/i"
-		(*attribsMap)[iKey] = []int64{int64(0)}
+		(*attribsMap)[iKey] = []uint64{uint64(0)}
 		(*attribsList) = append((*attribsList), iKey)
 	case primitive.ObjectID: // ignore it
 	case string: // ignore it
 	case float64:
-		(*attribsMap)[parentPath] = []int64{int64(value)}
+		(*attribsMap)[parentPath] = []uint64{uint64(value)}
 		(*attribsList) = append((*attribsList), parentPath)
 	case int:
-		(*attribsMap)[parentPath] = []int64{int64(value)}
+		(*attribsMap)[parentPath] = []uint64{uint64(value)}
 		(*attribsList) = append((*attribsList), parentPath)
 	case int32:
-		(*attribsMap)[parentPath] = []int64{int64(value)}
+		(*attribsMap)[parentPath] = []uint64{uint64(value)}
 		(*attribsList) = append((*attribsList), parentPath)
 	case int64:
-		(*attribsMap)[parentPath] = []int64{value}
+		(*attribsMap)[parentPath] = []uint64{uint64(value)}
 		(*attribsList) = append((*attribsList), parentPath)
 	case primitive.DateTime: // ignore it
-		(*attribsMap)[parentPath] = []int64{int64(value)}
+		(*attribsMap)[parentPath] = []uint64{uint64(value)}
 		(*attribsList) = append((*attribsList), parentPath)
 	default:
 		// log.Fatalf("'%s' ==> %T\n", parentPath, value)

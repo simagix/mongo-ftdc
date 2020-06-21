@@ -1,4 +1,4 @@
-// Copyright 2019 Kuei-chun Chen. All rights reserved.
+// Copyright 2020 Kuei-chun Chen. All rights reserved.
 
 package analytics
 
@@ -17,8 +17,9 @@ func TestGetServerStatusDataPoints(t *testing.T) {
 		t.Fatal(err)
 	}
 	metrics := ftdc.NewMetrics()
-	metrics.ReadAllMetrics(buffer)
-	v := getServerStatusDataPoints(metrics.Data[0].DataPointsMap, 0)
+	metrics.ReadAllMetrics(&buffer)
+	attrib := NewAttribs(&metrics.Data[0].DataPointsMap)
+	v := attrib.GetServerStatusDataPoints(0)
 	t.Log(v)
 }
 
@@ -30,7 +31,8 @@ func TestGetSystemMetricsDataPoints(t *testing.T) {
 		t.Fatal(err)
 	}
 	metrics := ftdc.NewMetrics()
-	metrics.ReadAllMetrics(buffer)
-	v := getSystemMetricsDataPoints(metrics.Data[0].DataPointsMap, 0)
+	metrics.ReadAllMetrics(&buffer)
+	attrib := NewAttribs(&metrics.Data[0].DataPointsMap)
+	v := attrib.GetSystemMetricsDataPoints(0)
 	t.Log(v)
 }

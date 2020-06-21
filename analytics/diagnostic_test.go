@@ -28,7 +28,7 @@ func TestReadDiagnosticFiles(t *testing.T) {
 		filename := DiagnosticDataDirectory + "/" + f.Name()
 		filenames = append(filenames, filename)
 	}
-	d := NewDiagnosticData(300)
+	d := NewDiagnosticData()
 	if err = d.readDiagnosticFiles(filenames); err != nil {
 		t.Fatal(err)
 	}

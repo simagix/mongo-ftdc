@@ -18,7 +18,7 @@ func TestGetDataPoint(t *testing.T) {
 }
 
 func TestGetServerStatusTimeSeriesDoc(t *testing.T) {
-	d := NewDiagnosticData(300)
+	d := NewDiagnosticData()
 	var filenames = []string{DiagnosticDataFilename}
 	d.DecodeDiagnosticData(filenames)
 	tsd := getServerStatusTimeSeriesDoc(d.ServerStatusList)
@@ -28,7 +28,7 @@ func TestGetServerStatusTimeSeriesDoc(t *testing.T) {
 }
 
 func TestGetSystemMetricsTimeSeriesDoca(t *testing.T) {
-	d := NewDiagnosticData(300)
+	d := NewDiagnosticData()
 	var filenames = []string{DiagnosticDataFilename}
 	d.DecodeDiagnosticData(filenames)
 	tsd, _ := getSystemMetricsTimeSeriesDoc(d.SystemMetricsList)
@@ -38,7 +38,7 @@ func TestGetSystemMetricsTimeSeriesDoca(t *testing.T) {
 }
 
 func TestGetReplSetGetStatusTimeSeriesDoc(t *testing.T) {
-	d := NewDiagnosticData(300)
+	d := NewDiagnosticData()
 	var filenames = []string{DiagnosticDataFilename}
 	d.DecodeDiagnosticData(filenames)
 	tsd, _ := getReplSetGetStatusTimeSeriesDoc(d.ReplSetStatusList, &[]string{})
@@ -48,7 +48,7 @@ func TestGetReplSetGetStatusTimeSeriesDoc(t *testing.T) {
 }
 
 func TestGetWiredTigerTimeSeriesDoc(t *testing.T) {
-	d := NewDiagnosticData(300)
+	d := NewDiagnosticData()
 	var filenames = []string{DiagnosticDataFilename}
 	d.DecodeDiagnosticData(filenames)
 	tsd := getWiredTigerTimeSeriesDoc(d.ServerStatusList)
@@ -60,7 +60,7 @@ func TestGetWiredTigerTimeSeriesDoc(t *testing.T) {
 func TestAddFTDCDetailStats(t *testing.T) {
 	filenames := []string{"testdata/diagnostic.data/metrics.2018-10-07T15-15-22Z-00000"}
 	metrics := NewMetrics()
-	diag := NewDiagnosticData(1)
+	diag := NewDiagnosticData()
 	diag.DecodeDiagnosticData(filenames)
 	metrics.AddFTDCDetailStats(diag)
 }

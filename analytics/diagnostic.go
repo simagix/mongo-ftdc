@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -59,7 +60,6 @@ type DiagnosticData struct {
 	ServerStatusList  []ServerStatusDoc
 	ReplSetStatusList []ReplSetStatusDoc
 	SystemMetricsList []SystemMetricsDoc
-	span              int
 	endpoints         []string
 }
 
@@ -73,8 +73,8 @@ type DiagnosticDoc struct {
 }
 
 // NewDiagnosticData -
-func NewDiagnosticData(span int) *DiagnosticData {
-	return &DiagnosticData{ServerStatusList: []ServerStatusDoc{}, ReplSetStatusList: []ReplSetStatusDoc{}, span: span}
+func NewDiagnosticData() *DiagnosticData {
+	return &DiagnosticData{ServerStatusList: []ServerStatusDoc{}, ReplSetStatusList: []ReplSetStatusDoc{}}
 }
 
 // GetEndPoints gets grafana uri
@@ -95,16 +95,12 @@ func (d *DiagnosticData) DecodeDiagnosticData(filenames []string) error {
 		t := time.Now().Unix() * 1000
 		minute := int64(60) * 1000
 		d.endpoints = append(d.endpoints, fmt.Sprintf(analyticsEndpoint, t, t+(10*minute)))
-		// d.endpoints = append(d.endpoints, fmt.Sprintf(disksEndpoint, t, t+(10*minute)))
 	} else {
 		log.Printf("Stats from %v to %v\n", d.ServerStatusList[0].LocalTime.Format("2006-01-02T15:04:05Z"),
 			d.ServerStatusList[len(d.ServerStatusList)-1].LocalTime.Format("2006-01-02T15:04:05Z"))
 		d.endpoints = append(d.endpoints, fmt.Sprintf(analyticsEndpoint,
 			d.ServerStatusList[0].LocalTime.Unix()*1000,
 			d.ServerStatusList[len(d.ServerStatusList)-1].LocalTime.Unix()*1000))
-		// d.endpoints = append(d.endpoints, fmt.Sprintf(disksEndpoint,
-		// 	d.ServerStatusList[0].LocalTime.Unix()*1000,
-		// 	d.ServerStatusList[len(d.ServerStatusList)-1].LocalTime.Unix()*1000))
 	}
 	return nil
 }
@@ -159,7 +155,7 @@ func (d *DiagnosticData) readDiagnosticFiles(filenames []string) error {
 	}
 
 	btime := time.Now()
-	log.Printf("reading %d files with %d second(s) interval\n", len(filenames), d.span)
+	log.Printf("reading %d files with %d second(s) interval\n", len(filenames), 1)
 	var diagDataMap = map[string]DiagnosticData{}
 	nThreads := runtime.NumCPU() - 1
 	if nThreads < 1 {
@@ -215,39 +211,22 @@ func (d *DiagnosticData) readDiagnosticFile(filename string) (DiagnosticData, er
 	}
 
 	metrics := ftdc.NewMetrics()
-	if d.span >= 300 {
-		metrics.ReadMetricsSummary(buffer)
-		diagData.ServerInfo = metrics.Doc
-		for _, v := range metrics.Data {
-			block := v.Buffer
-			var doc DiagnosticDoc
-			bson.Unmarshal(block[:v.DocSize], &doc) // first document
-			diagData.ServerStatusList = append(diagData.ServerStatusList, doc.ServerStatus)
-			diagData.SystemMetricsList = append(diagData.SystemMetricsList, doc.SystemMetrics)
-			diagData.ReplSetStatusList = append(diagData.ReplSetStatusList, doc.ReplSetGetStatus)
-		}
-	} else {
-		metrics.ReadAllMetrics(buffer)
-		diagData.ServerInfo = metrics.Doc
-		for _, v := range metrics.Data {
-			block := v.Buffer
-			var doc DiagnosticDoc
-			bson.Unmarshal(block[:v.DocSize], &doc) // first document
-			diagData.ReplSetStatusList = append(diagData.ReplSetStatusList, doc.ReplSetGetStatus)
-			for i := uint32(0); i < v.NumDeltas; i += uint32(d.span) {
-				ss := getServerStatusDataPoints(v.DataPointsMap, i)
-				diagData.ServerStatusList = append(diagData.ServerStatusList, ss)
-				sm := getSystemMetricsDataPoints(v.DataPointsMap, i)
-				diagData.SystemMetricsList = append(diagData.SystemMetricsList, sm)
-			}
+	metrics.ReadAllMetrics(&buffer)
+	diagData.ServerInfo = metrics.Doc
+	for _, v := range metrics.Data {
+		var doc DiagnosticDoc
+		bson.Unmarshal(v.Block, &doc) // first document
+		diagData.ReplSetStatusList = append(diagData.ReplSetStatusList, doc.ReplSetGetStatus)
+		attrib := NewAttribs(&v.DataPointsMap)
+		for i := 0; i < int(v.NumDeltas); i++ {
+			ss := attrib.GetServerStatusDataPoints(i)
+			diagData.ServerStatusList = append(diagData.ServerStatusList, ss)
+			sm := attrib.GetSystemMetricsDataPoints(i)
+			diagData.SystemMetricsList = append(diagData.SystemMetricsList, sm)
 		}
 	}
 
-	filename = strings.TrimRight(filename, "/")
-	i := strings.LastIndex(filename, "/")
-	if i >= 0 {
-		filename = filename[i+1:]
-	}
+	filename = filepath.Base(filename)
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	mem := fmt.Sprintf("Memory Alloc = %v MiB, TotalAlloc = %v MiB", m.Alloc/(1024*1024), m.TotalAlloc/(1024*1024))

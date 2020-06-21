@@ -88,7 +88,6 @@ func (m *Metrics) SetLatest(latest int) { m.latest = latest }
 func (m *Metrics) ProcessFiles(filenames []string) error {
 	hostname, _ := os.Hostname()
 	port := 3000
-	span := 1
 	filenames = GetMetricsFilenames(filenames)
 	if len(filenames) == 0 {
 		t := time.Now().Unix() * 1000
@@ -102,16 +101,12 @@ func (m *Metrics) ProcessFiles(filenames []string) error {
 	}
 	if hostname == "ftdc" { // from docker-compose
 		port = 3030
-		if len(filenames) > 3 {
-			if m.verbose == true {
-				span = (len(filenames)-1)/5 + 1
-			} else { //trim it down to 3 files
-				fmt.Println("* limits to latest 3 files in a Docker container")
-				filenames = filenames[len(filenames)-3:]
-			}
+		if len(filenames) > 3 { // avoid OOM killer
+			fmt.Println("* limits to latest 3 files in a Docker container")
+			filenames = filenames[len(filenames)-3:]
 		}
 	}
-	diag := NewDiagnosticData(span)
+	diag := NewDiagnosticData()
 	if err := diag.DecodeDiagnosticData(filenames); err != nil { // get summary
 		return err
 	}

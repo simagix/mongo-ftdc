@@ -10,7 +10,7 @@ import (
 func getServerStatusDocs() []ServerStatusDoc {
 	var diag DiagnosticData
 	var docs []ServerStatusDoc
-	d := NewDiagnosticData(300)
+	d := NewDiagnosticData()
 	diag, _ = d.readDiagnosticFile(DiagnosticDataFilename)
 
 	for _, ss := range diag.ServerStatusList {
