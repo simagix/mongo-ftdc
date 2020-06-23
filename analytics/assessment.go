@@ -201,12 +201,22 @@ func (as *Assessment) getStatsByData(data TimeSeriesDoc, from time.Time, to time
 	sort.Slice(arr, func(i int, j int) bool {
 		return arr[i] < arr[j]
 	})
+	end := len(arr) - 1
 	samples := float64(len(arr) + 1)
 	p5 := int(samples * 0.05)
+	if p5 > end {
+		p5 = end
+	}
 	median := int(samples * .5)
+	if median > end {
+		median = end
+	}
 	p95 := int(samples * .95)
 	if p95 > len(arr)-1 {
 		p95 = len(arr) - 1
+	}
+	if p95 > end {
+		p95 = end
 	}
 	return arr[p5], arr[median], arr[p95]
 }
