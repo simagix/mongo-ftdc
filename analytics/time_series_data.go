@@ -278,7 +278,7 @@ func getServerStatusTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string
 			if i > 0 {
 				seconds := math.Round(stat.LocalTime.Sub(pstat.LocalTime).Seconds())
 				if seconds < 1 {
-					panic(seconds)
+					seconds = 1
 				}
 
 				x = timeSeriesData["mem_page_faults"]
@@ -391,7 +391,7 @@ func getWiredTigerTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]T
 			if i > 0 {
 				seconds := math.Round(stat.LocalTime.Sub(pstat.LocalTime).Seconds())
 				if seconds < 1 {
-					panic(seconds)
+					seconds = 1
 				}
 				x = timeSeriesData["wt_blkmgr_read"]
 				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.BlockManager.BytesRead-pstat.WiredTiger.BlockManager.BytesRead)/mb/seconds, t))
