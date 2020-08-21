@@ -1,30 +1,33 @@
 # MongoDB FTDC Metrics and Charts
+
 A dockerized tool to view MongoDB FTDC metrics.
 
 ## Build
+
 Use `build.sh` to build *simagix/ftdc* and *simagix/grafana-ftdc* Docker images.
 
-```
+```bash
 ./build.sh
 ```
 
 ## Startup
+
 Create a `diagnostic.data` directory if it doesn't exist yet:
 
-```
+```bash
 mkdir -p ./diagnostic.data/
 ```
 
 Copy FTDC files to under directory *diagnostic.data*:
 
-```
+```bash
 cp $SOMEWHERE/metrics.* ./diagnostic.data/
 ```
 
 Bring up FTDC viewer:
 
-```
-$ docker-compose up
+```bash
+docker-compose up
 ```
 
 ## View FTDC Metrics
@@ -34,9 +37,10 @@ $ docker-compose up
 - Change correct *From* and *To* date/time in the *Custom Range* panel.
 
 ## Read Other FTDC Data
+
 To read different FTDC files without restarting all Docker containers, remove all files from directory *diagnostic.data* and copy FTDC files to under the same directory.  Execute the command below to force FTDC data reload:
 
-```
+```bash
 curl -XPOST http://localhost:5438/grafana/dir -d '{"dir": "/diagnostic.data"}'
 ```
 
@@ -48,6 +52,10 @@ Alternatively, you can simply run the command `docker-compose down` to bring dow
 
 ## Shutdown
 
-```
+```bash
 docker-compose down
 ```
+
+## Disclaimer
+
+This software is not supported by MongoDB, Inc. under any of their commercial support subscriptions or otherwise. Any usage of keyhole is at your own risk. Bug reports, feature requests and questions can be posted in the Issues section on GitHub.
