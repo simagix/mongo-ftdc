@@ -1,4 +1,4 @@
-FROM golang:1.13-alpine as builder
+FROM golang:1.14-alpine as builder
 RUN apk update && apk add dep git && rm -rf /var/cache/apk/* \
   && mkdir -p /go/src/github.com/simagix/mongo-ftdc
 ADD . /go/src/github.com/simagix/mongo-ftdc

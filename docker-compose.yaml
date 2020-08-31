@@ -18,8 +18,3 @@ services:
     volumes:
       - ./diagnostic.data:/diagnostic.data
     command: /simple_json /diagnostic.data
-    deploy:
-      resources:
-        limits:
-          cpus: '4'
-          memory: 512M

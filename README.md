@@ -1,6 +1,6 @@
 # MongoDB FTDC Metrics and Charts
 
-A dockerized tool to view MongoDB FTDC metrics.
+A dockerized tool to view MongoDB FTDC metrics.  Source codes were merged back to [Keyhole](https://github.com/simagix/keyhole).
 
 ## Build
 

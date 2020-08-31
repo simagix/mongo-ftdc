@@ -12,8 +12,7 @@ import (
 	"os"
 
 	"github.com/simagix/gox"
-	"github.com/simagix/mongo-ftdc/analytics"
-	"go.mongodb.org/mongo-driver/bson"
+	"github.com/simagix/keyhole/analytics"
 )
 
 var version = "self-built"
@@ -47,5 +46,5 @@ func main() {
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(bson.M{"ok": 1, "message": "hello mongo-ftdc!"})
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": 1, "message": "hello mongo-ftdc!"})
 }

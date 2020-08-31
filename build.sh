@@ -1,16 +1,20 @@
 #! /bin/bash
 # Copyright 2019 Kuei-chun Chen. All rights reserved.
 
-if [ -d "vendor" ]; then
-  dep ensure -update
-else
-  dep ensure
+DEP=`which dep`
+if [ "$DEP" == "" ]; then
+    echo "dep command not found"
+    exit
 fi
 
-ver=1.0.2
-version="v${ver}-$(date "+%Y%m%d")"
-mkdir -p bin
-env CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.version=$version" -o bin/ftdc-osx-x64 simple_json.go
+if [ -d vendor ]; then
+    UPDATE="-update"
+fi
+export ver=$(cat version)
+export version="v${ver}-$(date "+%Y%m%d")"
+mkdir -p dist
+$DEP ensure $UPDATE
+env CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.version=$version" -o dist/ftdc-osx-x64 simple_json.go
 
 if [ "$1" == "docker" ]; then
   env CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=$version" -o ftdc-linux-x64 simple_json.go
