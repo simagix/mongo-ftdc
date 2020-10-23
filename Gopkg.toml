@@ -1,6 +1,6 @@
 [[constraint]]
   # branch = "2.5"
-  version = "v2.5.1"
+  version = "v1.0.0"
   name = "github.com/simagix/keyhole"
 
 [prune]
