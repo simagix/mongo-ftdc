@@ -1,9 +1,9 @@
-FROM golang:1.14-alpine as builder
-RUN apk update && apk add dep git && rm -rf /var/cache/apk/* \
+FROM golang:1.15-alpine as builder
+RUN apk update && apk add git && rm -rf /var/cache/apk/* \
   && mkdir -p /go/src/github.com/simagix/mongo-ftdc
 ADD . /go/src/github.com/simagix/mongo-ftdc
 WORKDIR /go/src/github.com/simagix/mongo-ftdc
-RUN dep ensure && go build -o simple_json simple_json.go
+RUN go build -o simple_json simple_json.go
 FROM alpine
 LABEL Ken Chen <ken.chen@simagix.com>
 RUN addgroup -S simagix && adduser -S simagix -G simagix

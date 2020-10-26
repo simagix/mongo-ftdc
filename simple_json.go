@@ -15,6 +15,7 @@ import (
 	"github.com/simagix/keyhole/analytics"
 )
 
+var repo = "simagix/mongo-ftdc"
 var version = "self-built"
 
 func main() {
@@ -26,7 +27,8 @@ func main() {
 	flagset := make(map[string]bool)
 	flag.Visit(func(f *flag.Flag) { flagset[f.Name] = true })
 	if *ver {
-		fmt.Println("mongo-ftdc", version)
+		fullVersion := fmt.Sprintf(`%v %v`, repo, version)
+		fmt.Println(fullVersion)
 		os.Exit(0)
 	}
 	addr := fmt.Sprintf(":%d", *port)
