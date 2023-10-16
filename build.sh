@@ -1,11 +1,25 @@
 #! /bin/bash
-# Copyright 2019 Kuei-chun Chen. All rights reserved.
+# Copyright 2019-present Kuei-chun Chen. All rights reserved.
 die() { echo "$*" 1>&2 ; exit 1; }
-REPO=$(basename "$(dirname "$(pwd)")")/$(basename "$(pwd)")
-VERSION="v$(cat version)-$(date "+%Y%m%d")"
-LDFLAGS="-X main.version=$VERSION -X main.repo=$REPO"
 [[ "$(which go)" = "" ]] && die "go command not found"
+EXEC=ftdc_json
+VERSION="v$(cat version)-$(git log -1 --date=format:"%Y%m%d" --format="%ad")"
+LDFLAGS="-X main.version=$VERSION -X main.repo=$EXEC"
 
 mkdir -p dist
-env CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/mftdc simple_json.go
-dist/mftdc -version
+if [ "$1" == "docker" ]; then
+	VER=$(cat version)
+	TAG="simagix/ftdc"
+    docker-compose down > /dev/null 2>&1
+    if [[ "${VER}" == "master" ]]; then
+        VER="latest"
+    fi
+    docker build --no-cache -f Dockerfile -t ${TAG}:${VER} .
+	docker tag ${TAG}:${VER} ${TAG}
+
+    docker build --no-cache -f grafana/Dockerfile -t simagix/grafana-ftdc:${VER} .
+    docker tag simagix/grafana-ftdc:${VER} simagix/grafana-ftdc
+else
+    env CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o dist/$EXEC main/ftdc_json.go
+    dist/$EXEC -version
+fi

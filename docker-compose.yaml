@@ -1,20 +1,21 @@
-# Copyright 2019 Kuei-chun Chen. All rights reserved.
+# Copyright 2019-present Kuei-chun Chen. All rights reserved.
+# docker-compose.yaml
 version: "3"
 
 services:
   grafana-ftdc:
-    image: simagix/grafana-ftdc
+    image: simagix/grafana-ftdc:latest
     hostname: grafana-ftdc
     ports:
       - "3030:3000"
     environment:
-      GF_INSTALL_PLUGINS: grafana-simple-json-datasource
+      GF_INSTALL_PLUGINS: simpod-json-datasource
 
   ftdc:
-    image: simagix/ftdc
+    image: simagix/ftdc:latest
     hostname: ftdc
     ports:
       - "5408:5408"
     volumes:
       - ./diagnostic.data:/diagnostic.data
-    command: /simple_json /diagnostic.data
+    command: /ftdc_json /diagnostic.data
