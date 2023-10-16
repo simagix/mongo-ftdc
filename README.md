@@ -7,7 +7,7 @@ A dockerized tool to view MongoDB FTDC metrics.  Source codes were merged back t
 Use `build.sh` to build *simagix/ftdc* and *simagix/grafana-ftdc* Docker images.
 
 ```bash
-./build.sh
+./build.sh docker
 ```
 
 ## Startup

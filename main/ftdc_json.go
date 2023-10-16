@@ -1,4 +1,5 @@
-// Copyright 2019 Kuei-chun Chen. All rights reserved.
+// Copyright 2019-present Kuei-chun Chen. All rights reserved.
+// ftdc_json.go
 
 package main
 
