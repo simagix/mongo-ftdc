@@ -1,7 +1,8 @@
 FROM golang:1.19-alpine as builder
 RUN apk update && apk add git bash && rm -rf /var/cache/apk/* \
-  && mkdir -p /github.com/simagix/mongo-ftdc
-ADD . /github.com/simagix/mongo-ftdc
+  && mkdir -p /github.com/simagix/mongo-ftdc && cd /github.com/simagix \
+  && git clone --depth 1 https://github.com/simagix/mongo-ftdc.git
+# ADD . /github.com/simagix/mongo-ftdc
 WORKDIR /github.com/simagix/mongo-ftdc
 RUN ./build.sh
 FROM alpine
