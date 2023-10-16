@@ -12,7 +12,7 @@ import (
 	"os"
 
 	"github.com/simagix/gox"
-	"github.com/simagix/keyhole/analytics"
+	ftdc "github.com/simagix/mongo-ftdc"
 )
 
 var repo = "simagix/mongo-ftdc"
@@ -37,7 +37,7 @@ func main() {
 	} else {
 		listener.Close()
 	}
-	metrics := analytics.NewMetrics()
+	metrics := ftdc.NewMetrics()
 	metrics.SetLatest(*latest)
 	metrics.SetVerbose(*verbose)
 	if err := metrics.ProcessFiles(flag.Args()); err != nil {

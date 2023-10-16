@@ -3,7 +3,7 @@ version: "3"
 
 services:
   grafana-ftdc:
-    image: simagix/grafana-ftdc
+    image: simagix/grafana-ftdc:latest
     hostname: grafana-ftdc
     ports:
       - "3030:3000"
@@ -11,10 +11,10 @@ services:
       GF_INSTALL_PLUGINS: grafana-simple-json-datasource
 
   ftdc:
-    image: simagix/ftdc
+    image: simagix/ftdc:latest
     hostname: ftdc
     ports:
       - "5408:5408"
     volumes:
       - ./diagnostic.data:/diagnostic.data
-    command: /simple_json /diagnostic.data
+    command: /ftdc_json /diagnostic.data
