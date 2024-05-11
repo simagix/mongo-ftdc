@@ -48,7 +48,11 @@ var serverStatusChartsLegends = []string{
 	"net_in", "net_out", "net_requests", "net_physical_in", "net_physical_out",
 	"ops_query", "ops_insert", "ops_update", "ops_delete", "ops_getmore", "ops_command",
 	"q_active_read", "q_active_write", "q_queued_read", "q_queued_write",
-	"scan_keys", "scan_objects", "scan_sort",
+	"scan_keys", "scan_objects", "op_blkSort", "op_writeConflicts", "ttl_count", "ops_repl_query", 
+	"ops_repl_insert", "ops_repl_update", "ops_repl_delete", "ops_repl_getmore", 
+	"ops_repl_command", "cursor_open", "cursor_pinned", "cursor_noTimeout", "flow_engagedCount",
+	"doc_returned", "doc_updated", "doc_inserted", "doc_deleted",
+	"coll_nonTailable", "coll_total",
 }
 var wiredTigerChartsLegends = []string{
 	"wt_blkmgr_read", "wt_blkmgr_written", "wt_blkmgr_written_checkpoint",
@@ -89,7 +93,8 @@ func getReplSetGetStatusTimeSeriesDoc(replSetGetStatusList []ReplSetStatusDoc, l
 		if len(hosts) == 0 || len(hosts) != len(stat.Members) {
 			hosts = hosts[:0]
 			for n, mb := range stat.Members {
-				hostname := fmt.Sprintf("host-%v", n)
+				//hostname := fmt.Sprintf("host-%v", n)
+				hostname := mb.Name
 				a := strings.Index(mb.Name, ".")
 				b := strings.LastIndex(mb.Name, ":")
 				var legend string
@@ -140,9 +145,10 @@ func getReplSetGetStatusTimeSeriesDoc(replSetGetStatusList []ReplSetStatusDoc, l
 	return timeSeriesData, replicationLags
 }
 
-func getSystemMetricsTimeSeriesDoc(systemMetricsList []SystemMetricsDoc) (map[string]TimeSeriesDoc, map[string]DiskStats) {
+func getSystemMetricsTimeSeriesDoc(systemMetricsList []SystemMetricsDoc) (map[string]TimeSeriesDoc, map[string]DiskStats, map[string]DiskIopsStats) {
 	var timeSeriesData = map[string]TimeSeriesDoc{}
 	var diskStats = map[string]DiskStats{}
+	var diskIopsStats = map[string]DiskIopsStats{}
 	var pstat = SystemMetricsDoc{}
 
 	for _, legend := range systemMetricsChartsLegends {
@@ -153,14 +159,22 @@ func getSystemMetricsTimeSeriesDoc(systemMetricsList []SystemMetricsDoc) (map[st
 			t := float64(stat.Start.UnixNano() / (1000 * 1000))
 			for k, disk := range stat.Disks {
 				u := 100 * float64(disk.IOTimeMS-pstat.Disks[k].IOTimeMS) / 1000 // / 1000 ms * 100 %
-				iops := float64(disk.Reads+disk.Writes-(pstat.Disks[k].Reads+pstat.Disks[k].Writes)) / float64(stat.Start.Sub(pstat.Start).Seconds())
+				//iops := float64(disk.Reads+disk.Writes-(pstat.Disks[k].Reads+pstat.Disks[k].Writes)) / float64(stat.Start.Sub(pstat.Start).Seconds())
+				read_iops := float64(disk.Reads-pstat.Disks[k].Reads) / float64(stat.Start.Sub(pstat.Start).Seconds())
+				write_iops := float64(disk.Writes-pstat.Disks[k].Writes) / float64(stat.Start.Sub(pstat.Start).Seconds())
 				qlen := float64(disk.IOInProgress)
 				readTimeMS := float64(disk.ReadTimeMS - pstat.Disks[k].ReadTimeMS)
 				writeTimeMS := float64(disk.WriteTimeMS - pstat.Disks[k].WriteTimeMS)
 				ioQueuedMS := float64(disk.IOQueuedMS - pstat.Disks[k].IOQueuedMS)
 				x := diskStats[k]
 				x.Utilization.DataPoints = append(x.Utilization.DataPoints, getDataPoint(u, t))
-				x.IOPS.DataPoints = append(x.IOPS.DataPoints, getDataPoint(iops, t))
+				//x.IOPS.DataPoints = append(x.IOPS.DataPoints, getDataPoint(iops, t))
+				y := diskIopsStats[fmt.Sprintf("%s-read", k)]
+				y.READ_IOPS.DataPoints = append(y.READ_IOPS.DataPoints, getDataPoint(read_iops, t))
+				diskIopsStats[fmt.Sprintf("%s-read", k)] = y
+				y = diskIopsStats[fmt.Sprintf("%s-write", k)]
+				y.WRITE_IOPS.DataPoints = append(y.WRITE_IOPS.DataPoints, getDataPoint(write_iops, t))
+				diskIopsStats[fmt.Sprintf("%s-write", k)] = y
 				x.IOInProgress.DataPoints = append(x.IOInProgress.DataPoints, getDataPoint(qlen, t))
 				x.ReadTimeMS.DataPoints = append(x.ReadTimeMS.DataPoints, getDataPoint(readTimeMS, t))
 				x.WriteTimeMS.DataPoints = append(x.WriteTimeMS.DataPoints, getDataPoint(writeTimeMS, t))
@@ -201,7 +215,7 @@ func getSystemMetricsTimeSeriesDoc(systemMetricsList []SystemMetricsDoc) (map[st
 
 		pstat = stat
 	}
-	return timeSeriesData, diskStats
+	return timeSeriesData, diskStats, diskIopsStats
 }
 
 func getServerStatusTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]TimeSeriesDoc {
@@ -342,9 +356,81 @@ func getServerStatusTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string
 				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.QueryExecutor.ScannedObjects-pstat.Metrics.QueryExecutor.ScannedObjects)/seconds, t))
 				timeSeriesData["scan_objects"] = x
 
-				x = timeSeriesData["scan_sort"]
+				x = timeSeriesData["op_blkSort"]
 				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.Operation.ScanAndOrder-pstat.Metrics.Operation.ScanAndOrder)/seconds, t))
-				timeSeriesData["scan_sort"] = x
+				timeSeriesData["op_blkSort"] = x
+
+				x = timeSeriesData["op_writeConflicts"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.Operation.WriteConflicts-pstat.Metrics.Operation.WriteConflicts)/seconds, t))
+				timeSeriesData["op_writeConflicts"] = x
+
+				x = timeSeriesData["ops_repl_query"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCountersRepl.Query-pstat.OpCountersRepl.Query)/seconds, t))
+				timeSeriesData["ops_repl_query"] = x
+
+				x = timeSeriesData["ops_repl_insert"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCountersRepl.Insert-pstat.OpCountersRepl.Insert)/seconds, t))
+				timeSeriesData["ops_repl_insert"] = x
+
+				x = timeSeriesData["ops_repl_update"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCountersRepl.Update-pstat.OpCountersRepl.Update)/seconds, t))
+				timeSeriesData["ops_repl_update"] = x
+
+				x = timeSeriesData["ops_repl_delete"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCountersRepl.Delete-pstat.OpCountersRepl.Delete)/seconds, t))
+				timeSeriesData["ops_repl_delete"] = x
+
+				x = timeSeriesData["ops_repl_getmore"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCountersRepl.Getmore-pstat.OpCountersRepl.Getmore)/seconds, t))
+				timeSeriesData["ops_repl_getmore"] = x
+
+				x = timeSeriesData["ops_repl_command"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCountersRepl.Command-pstat.OpCountersRepl.Command)/seconds, t))
+				timeSeriesData["ops_repl_command"] = x
+
+				x = timeSeriesData["cursor_open"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.Cursor.Total), t))
+				timeSeriesData["cursor_open"] = x
+
+				x = timeSeriesData["cursor_pinned"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.Cursor.Pinned), t))
+				timeSeriesData["cursor_pinned"] = x
+
+				x = timeSeriesData["cursor_noTimeout"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.Cursor.NoTimeout), t))
+				timeSeriesData["cursor_noTimeout"] = x
+
+				x = timeSeriesData["flow_engagedCount"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.FlowControl.IsLaggedCount-pstat.FlowControl.IsLaggedCount)/seconds, t))
+				timeSeriesData["flow_engagedCount"] = x
+
+				x = timeSeriesData["coll_nonTailable"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.QueryExecutor.CollectionScans.NonTailable-pstat.Metrics.QueryExecutor.CollectionScans.NonTailable)/seconds, t))
+				timeSeriesData["coll_nonTailable"] = x
+
+				x = timeSeriesData["coll_total"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.QueryExecutor.CollectionScans.Total-pstat.Metrics.QueryExecutor.CollectionScans.Total)/seconds, t))
+				timeSeriesData["coll_total"] = x
+
+				x = timeSeriesData["ttl_count"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.TTL.DeletedDocuments-pstat.Metrics.TTL.DeletedDocuments)/seconds, t))
+				timeSeriesData["ttl_count"] = x
+
+				x = timeSeriesData["doc_returned"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.Document.Returned-pstat.Metrics.Document.Returned)/seconds, t))
+				timeSeriesData["doc_returned"] = x
+
+				x = timeSeriesData["doc_inserted"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.Document.Inserted-pstat.Metrics.Document.Inserted)/seconds, t))
+				timeSeriesData["doc_inserted"] = x
+
+				x = timeSeriesData["doc_updated"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.Document.Updated-pstat.Metrics.Document.Updated)/seconds, t))
+				timeSeriesData["doc_updated"] = x
+
+				x = timeSeriesData["doc_deleted"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.Document.Deleted-pstat.Metrics.Document.Deleted)/seconds, t))
+				timeSeriesData["doc_deleted"] = x
 			} // if i > 0
 		} // if stat.Uptime > pstat.Uptime
 
@@ -428,3 +514,4 @@ func getWiredTigerTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]T
 	}
 	return timeSeriesData
 }
+

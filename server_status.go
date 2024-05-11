@@ -9,12 +9,12 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-// DocumentDoc contains db.serverStatus().document
+// DocumentDoc contains db.serverStatus().metrics.document
 type DocumentDoc struct {
-	Deleted  int `json:"deleted" bson:"deleted"`
-	Inserted int `json:"inserted" bson:"inserted"`
-	Returned int `json:"returned" bson:"returned"`
-	Updated  int `json:"updated" bson:"updated"`
+	Deleted  uint64 `json:"deleted" bson:"deleted"`
+	Inserted uint64 `json:"inserted" bson:"inserted"`
+	Returned uint64 `json:"returned" bson:"returned"`
+	Updated  uint64 `json:"updated" bson:"updated"`
 }
 
 // ExtraInfoDoc contains db.serverStatus().extra_info
@@ -42,11 +42,18 @@ type MemDoc struct {
 	Virtual  uint64 `json:"virtual" bson:"virtual"`
 }
 
+// FlowControlDoc contains db.serverStatus().flowControl
+type FlowControlDoc struct {
+	IsLaggedCount uint64 `json:"isLaggedCount" bson:"isLaggedCount"`
+}
+
 // MetricsDoc contains db.serverStatus().metrics
 type MetricsDoc struct {
 	Document      DocumentDoc      `json:"document" bson:"document"`
 	QueryExecutor QueryExecutorDoc `json:"queryExecutor" bson:"queryExecutor"`
 	Operation     OperationDoc     `json:"operation" bson:"operation"`
+	Cursor        CursorDoc        `json:"cursor" bson:"cursor"`
+	TTL           TTLDoc           `json:"ttl" bson:"ttl"`
 }
 
 // NetworkDoc contains db.serverStatus().network
@@ -64,8 +71,30 @@ type OperationDoc struct {
 	WriteConflicts uint64 `json:"writeConflicts" bson:"writeConflicts"`
 }
 
+// TTLDoc contains db.serverStatus().metrics.ttl
+type TTLDoc struct {
+	DeletedDocuments   uint64 `json:"deletedDocuments" bson:"deletedDocuments"`
+}
+
+// OperationDoc contains db.serverStatus().metrics.cursor
+type CursorDoc struct {
+	Total     uint64 `json:"total" bson:"total"`
+	Pinned    uint64 `json:"pinned" bson:"pinned"`
+	NoTimeout uint64 `json:"noTimeout" bson:"noTimeout"`
+}
+
 // OpCountersDoc contains db.serverStatus().OpCounters
 type OpCountersDoc struct {
+	Command uint64 `json:"command" bson:"command"`
+	Delete  uint64 `json:"delete" bson:"delete"`
+	Getmore uint64 `json:"getmore" bson:"getmore"`
+	Insert  uint64 `json:"insert" bson:"insert"`
+	Query   uint64 `json:"query" bson:"query"`
+	Update  uint64 `json:"update" bson:"update"`
+}
+
+// OpCountersReplDoc contains db.serverStatus().OpCountersRepl
+type OpCountersReplDoc struct {
 	Command uint64 `json:"command" bson:"command"`
 	Delete  uint64 `json:"delete" bson:"delete"`
 	Getmore uint64 `json:"getmore" bson:"getmore"`
@@ -89,8 +118,15 @@ type OpLatenciesOpDoc struct {
 
 // QueryExecutorDoc contains db.serverStatus().queryExecutor
 type QueryExecutorDoc struct {
-	Scanned        uint64 `json:"scanned" bson:"scanned"`
-	ScannedObjects uint64 `json:"scannedObjects" bson:"scannedObjects"`
+	Scanned         uint64 `json:"scanned" bson:"scanned"`
+	ScannedObjects  uint64 `json:"scannedObjects" bson:"scannedObjects"`
+	CollectionScans CollectionScansDoc `json:"collectionScans" bson:"collectionScans"`
+}
+
+// CollectionScansDoc contains db.serverStatus().queryExecutor.collectionScans
+type CollectionScansDoc struct {
+	NonTailable uint64 `json:"nonTailable" bson:"nonTailable"`
+	Total       uint64 `json:"total" bson:"total"`
 }
 
 // WiredTigerBlockManagerDoc contains db.serverStatus().wiredTiger.cache
@@ -149,20 +185,22 @@ type ConnectionsDoc struct {
 
 // ServerStatusDoc contains docs from db.serverStatus()
 type ServerStatusDoc struct {
-	Connections ConnectionsDoc `json:"connections" bson:"connections"`
-	ExtraInfo   ExtraInfoDoc   `json:"extra_info" bson:"extra_info"`
-	GlobalLock  GlobalLockDoc  `json:"globalLock" bson:"globalLock"`
-	Host        string         `json:"host" bson:"host"`
-	LocalTime   time.Time      `json:"localTime" bson:"localTime"`
-	Mem         MemDoc         `json:"mem" bson:"mem"`
-	Metrics     MetricsDoc     `json:"metrics" bson:"metrics"`
-	Network     NetworkDoc     `json:"network" bson:"network"`
-	OpCounters  OpCountersDoc  `json:"opcounters" bson:"opcounters"`
-	OpLatencies OpLatenciesDoc `json:"opLatencies" bson:"opLatencies"`
-	Process     string         `json:"process" bson:"process"`
-	Repl        bson.M         `json:"repl" bson:"repl"`
-	Sharding    bson.M         `json:"sharding" bson:"sharding"`
-	Uptime      uint64         `json:"uptime" bson:"uptime"`
-	Version     string         `json:"version" bson:"version"`
-	WiredTiger  WiredTigerDoc  `json:"wiredTiger" bson:"wiredTiger"`
+	Connections    ConnectionsDoc     `json:"connections" bson:"connections"`
+	ExtraInfo      ExtraInfoDoc       `json:"extra_info" bson:"extra_info"`
+	GlobalLock     GlobalLockDoc      `json:"globalLock" bson:"globalLock"`
+	Host           string             `json:"host" bson:"host"`
+	LocalTime      time.Time          `json:"localTime" bson:"localTime"`
+	Mem            MemDoc             `json:"mem" bson:"mem"`
+	FlowControl    FlowControlDoc     `json:"flowControl" bson:"flowControl"`
+	Metrics        MetricsDoc         `json:"metrics" bson:"metrics"`
+	Network        NetworkDoc         `json:"network" bson:"network"`
+	OpCounters     OpCountersDoc      `json:"opcounters" bson:"opcounters"`
+	OpCountersRepl OpCountersReplDoc  `json:"opcountersRepl" bson:"opcountersRepl"`
+	OpLatencies    OpLatenciesDoc     `json:"opLatencies" bson:"opLatencies"`
+	Process        string             `json:"process" bson:"process"`
+	Repl           bson.M             `json:"repl" bson:"repl"`
+	Sharding       bson.M             `json:"sharding" bson:"sharding"`
+	Uptime         uint64             `json:"uptime" bson:"uptime"`
+	Version        string             `json:"version" bson:"version"`
+	WiredTiger     WiredTigerDoc      `json:"wiredTiger" bson:"wiredTiger"`
 }

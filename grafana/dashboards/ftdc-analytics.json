@@ -1320,7 +1320,12 @@
         },
         {
           "refId": "C",
-          "target": "scan_sort",
+          "target": "op_blkSort",
+          "type": "timeserie"
+        },
+        {
+          "refId": "D",
+          "target": "op_writeConflicts",
           "type": "timeserie"
         }
       ],

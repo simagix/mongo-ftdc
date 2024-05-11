@@ -38,7 +38,7 @@ var FormulaMap = map[string]ScoreFormula{
 	"queued_write":          {label: "queued_write", formula: "p95 of queued_write", low: 1, high: 5},
 	"scan_keys":             {label: "scan_keys", formula: "scan_keys", low: 0, high: (1024 * 1024)},
 	"scan_objects":          {label: "scan_objects", formula: "max of [](scan_objects/scan_keys)", low: 2, high: 5},
-	"scan_sort":             {label: "scan_sort", formula: "scan_sort", low: 0, high: 1000},
+	"op_blkSort":             {label: "op_blkSort", formula: "op_blkSort", low: 0, high: 1000},
 	"ticket_avail_read":     {label: "ticket_avail_read %%", formula: "(p5 of ticket_avail_read)/128", low: 0, high: 100},
 	"ticket_avail_write":    {label: "ticket_avail_write %%", formula: "(p5 of ticket_avail_write)/128", low: 0, high: 100},
 	"wt_cache_used":         {label: "wt_cache_used %%", formula: "(p95 of wt_cache_used)/wt_cache_max", low: 80, high: 95},
@@ -112,8 +112,8 @@ func (as *Assessment) GetAssessment(from time.Time, to time.Time) map[string]int
 				marr = append(marr, m)
 			}
 		}
-		for k, v := range as.stats.DiskStats {
-			p5, median, p95 := as.getStatsByData(v.IOPS, from, to)
+/*		for k, v := range as.stats.DiskStats {
+			p5, median, p95 := as.getStatsByData(v.READ_IOPS, from, to)
 			if p95 == 0 {
 				continue
 			}
@@ -126,7 +126,7 @@ func (as *Assessment) GetAssessment(from time.Time, to time.Time) map[string]int
 			if m.score < 101 || as.verbose {
 				marr = append(marr, m)
 			}
-		}
+		}*/
 		sort.Slice(marr, func(i int, j int) bool {
 			// return marr[i].label < marr[j].label
 			if marr[i].score < marr[j].score {
@@ -283,7 +283,7 @@ func (as *Assessment) getScore(metric string, p5 float64, median float64, p95 fl
 			}
 		}
 		score = GetScoreByRange(max, lwm, hwm)
-	} else if metric == "scan_sort" { // 1 k sorted in mem
+	} else if metric == "op_blkSort" { // 1 k sorted in mem
 		score = GetScoreByRange(p95, lwm, hwm)
 	} else if strings.HasPrefix(metric, "ticket_avail_") {
 		score = int(100 * p5 / 128)
