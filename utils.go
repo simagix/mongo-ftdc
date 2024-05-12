@@ -117,9 +117,7 @@ func GetShortLabel(label string) string {
 		label = label[12:]
 	} else if strings.HasPrefix(label, "wt_") {
 		label = label[3:]
-		if strings.HasSuffix(label, "_evicted") {
-			label = label[:len(label)-8]
-		}
+		label = strings.TrimSuffix(label, "_evicted")
 	}
 	return label
 }

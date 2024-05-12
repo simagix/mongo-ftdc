@@ -19,9 +19,8 @@ type OptimeDoc struct {
 // GetOptime -
 func GetOptime(optime interface{}) int64 {
 	var ts int64
-	switch optime.(type) {
+	switch doc := optime.(type) {
 	case primitive.D:
-		doc := optime.(primitive.D)
 		for _, elem := range doc {
 			if elem.Key == "ts" {
 				b, _ := json.Marshal(elem.Value)
@@ -32,7 +31,7 @@ func GetOptime(optime interface{}) int64 {
 			}
 		}
 	case primitive.Timestamp:
-		b, _ := json.Marshal(optime.(primitive.Timestamp))
+		b, _ := json.Marshal(doc)
 		var optm OptimeDoc
 		json.Unmarshal(b, &optm)
 		ts = int64(optm.T)
