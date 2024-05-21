@@ -107,6 +107,18 @@ func GetShortLabel(label string) string {
 		label = label[9:]
 	} else if strings.HasPrefix(label, "scan_") {
 		label = label[5:]
+	} else if strings.HasPrefix(label, "flow_") {
+		label = label[5:]
+	} else if strings.HasPrefix(label, "coll_") {
+		label = label[5:]
+	} else if strings.HasPrefix(label, "ttl_") {
+		label = label[4:]
+	} else if strings.HasPrefix(label, "doc_") {
+		label = label[4:]
+	} else if strings.HasPrefix(label, "op_") {
+		label = label[3:]
+	} else if strings.HasPrefix(label, "cursor_") {
+		label = label[7:]
 	} else if strings.HasPrefix(label, "ticket_") {
 		label = label[7:]
 	} else if strings.HasPrefix(label, "wt_blkmgr_") {

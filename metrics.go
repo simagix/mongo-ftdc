@@ -37,6 +37,7 @@ type Metrics struct {
 // FTDCStats FTDC stats
 type FTDCStats struct {
 	DiskStats         map[string]DiskStats
+	DiskIopsStats     map[string]DiskIopsStats
 	MaxWTCache        float64
 	ReplicationLags   map[string]TimeSeriesDoc
 	ReplSetLegends    []string
@@ -49,12 +50,17 @@ type FTDCStats struct {
 
 // DiskStats -
 type DiskStats struct {
-	IOPS         TimeSeriesDoc
+	//IOPS         TimeSeriesDoc
 	IOInProgress TimeSeriesDoc
 	IOQueuedMS   TimeSeriesDoc
 	ReadTimeMS   TimeSeriesDoc
 	WriteTimeMS  TimeSeriesDoc
 	Utilization  TimeSeriesDoc
+}
+
+type DiskIopsStats struct {
+	READ_IOPS    TimeSeriesDoc
+	WRITE_IOPS   TimeSeriesDoc
 }
 
 type directoryReq struct {
@@ -205,6 +211,7 @@ func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(tsData)
 		return
 	}
+	
 	ftdc := m.ftdcStats
 	for _, target := range qr.Targets {
 		if target.Type == "timeserie" {
@@ -220,11 +227,21 @@ func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
 					data.Target = k
 					tsData = append(tsData, FilterTimeSeriesData(data, qr.Range.From, qr.Range.To))
 				}
-			} else if target.Target == "disks_iops" && len(ftdc.DiskStats) > 0 {
-				for k, v := range ftdc.DiskStats {
-					data := v.IOPS
-					data.Target = k
-					tsData = append(tsData, FilterTimeSeriesData(data, qr.Range.From, qr.Range.To))
+			} else if target.Target == "disks_read_iops" && len(ftdc.DiskIopsStats) > 0 {
+				for k, v := range ftdc.DiskIopsStats {
+					if strings.HasSuffix(k, "-read") {
+						data := v.READ_IOPS
+						data.Target = k
+						tsData = append(tsData, FilterTimeSeriesData(data, qr.Range.From, qr.Range.To))
+					}
+				}
+			} else if target.Target == "disks_write_iops" && len(ftdc.DiskIopsStats) > 0 {
+				for k, v := range ftdc.DiskIopsStats {
+					if strings.HasSuffix(k, "-write") {
+						data := v.WRITE_IOPS
+						data.Target = k
+						tsData = append(tsData, FilterTimeSeriesData(data, qr.Range.From, qr.Range.To))
+					}
 				}
 			} else if target.Target == "disks_queue_length" && len(ftdc.DiskStats) > 0 {
 				for k, v := range ftdc.DiskStats {
@@ -259,21 +276,34 @@ func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
 			if target.Target == "host_info" {
 				headerList := []bson.M{}
 				rowList := [][]string{}
-				headerList = append(headerList, bson.M{"text": "Configurations", "type": "String"})
-				rowList = append(rowList, []string{fmt.Sprintf(`CPU: %v cores (%v)`,
-					m.ftdcStats.ServerInfo.HostInfo.System.NumCores,
-					m.ftdcStats.ServerInfo.HostInfo.System.CPUArch)})
-				if m.verbose {
-					rowList = append(rowList, []string{fmt.Sprintf(`Host: %v`, m.ftdcStats.ServerInfo.HostInfo.System.Hostname)})
-				}
-				rowList = append(rowList, []string{fmt.Sprintf(`Memory: %v`,
-					gox.GetStorageSize(1024*1024*m.ftdcStats.ServerInfo.HostInfo.System.MemSizeMB))})
-				rowList = append(rowList, []string{m.ftdcStats.ServerInfo.HostInfo.OS.Type + " (" + m.ftdcStats.ServerInfo.HostInfo.OS.Version + ")"})
-				rowList = append(rowList, []string{m.ftdcStats.ServerInfo.HostInfo.OS.Name})
-				rowList = append(rowList, []string{fmt.Sprintf(`MongoDB v%v`, m.ftdcStats.ServerInfo.BuildInfo.Version)})
+				
+				// Add headers
+				headerList = append(headerList, bson.M{"text": "Host", "type": "String"}, bson.M{"text": "CPU", "type": "String"})
+				headerList = append(headerList, bson.M{"text": "Memory", "type": "String"}, bson.M{"text": "OS Name", "type": "String"})
+				headerList = append(headerList, bson.M{"text": "OS Type & Version", "type": "String"}, bson.M{"text": "MongoDB Version", "type": "String"})
+
+				// Append Host information
+				hostnameValue := fmt.Sprintf("%v", m.ftdcStats.ServerInfo.HostInfo.System.Hostname)
+
+        		// Append CPU information
+        		cpuValue := fmt.Sprintf("%v cores (%v)", m.ftdcStats.ServerInfo.HostInfo.System.NumCores, m.ftdcStats.ServerInfo.HostInfo.System.CPUArch)
+        
+       			// Append Memory information
+        		memoryValue := fmt.Sprintf("%v", gox.GetStorageSize(1024*1024*m.ftdcStats.ServerInfo.HostInfo.System.MemSizeMB))
+        
+        		// Append OS information
+				osNameValue := fmt.Sprintf("%v", m.ftdcStats.ServerInfo.HostInfo.OS.Name)
+        		osValue := fmt.Sprintf("%v (%v)", m.ftdcStats.ServerInfo.HostInfo.OS.Type, m.ftdcStats.ServerInfo.HostInfo.OS.Version)
+        
+        		// Append MongoDB version
+        		mongoDBVersionValue := fmt.Sprintf("v%v", m.ftdcStats.ServerInfo.BuildInfo.Version)
+
+				rowList = append(rowList, []string{hostnameValue, cpuValue, memoryValue, osNameValue, osValue, mongoDBVersionValue})
+
+				// Create the table data document
 				doc := bson.M{"columns": headerList, "type": "table", "rows": rowList}
 				tsData = append(tsData, doc)
-			} else if target.Target == "assessment" {
+			} else if target.Target == "assessment_deprecated" {
 				as := NewAssessment(ftdc)
 				as.SetVerbose(m.verbose)
 				tsData = append(tsData, as.GetAssessment(qr.Range.From, qr.Range.To))
@@ -349,7 +379,7 @@ func (m *Metrics) AddFTDCDetailStats(diag *DiagnosticData) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		systemMetricsTSD, ftdc.DiskStats = getSystemMetricsTimeSeriesDoc(ftdc.SystemMetricsList) // SystemMetrics
+		systemMetricsTSD, ftdc.DiskStats, ftdc.DiskIopsStats = getSystemMetricsTimeSeriesDoc(ftdc.SystemMetricsList) // SystemMetrics
 	}()
 	wg.Add(1)
 	go func() {

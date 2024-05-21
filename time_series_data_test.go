@@ -32,7 +32,7 @@ func TestGetSystemMetricsTimeSeriesDoca(t *testing.T) {
 	d := NewDiagnosticData()
 	var filenames = []string{DiagnosticDataFilename}
 	d.DecodeDiagnosticData(filenames)
-	tsd, _ := getSystemMetricsTimeSeriesDoc(d.SystemMetricsList)
+	tsd, _, _ := getSystemMetricsTimeSeriesDoc(d.SystemMetricsList)
 	if len(tsd) == 0 {
 		t.Fatal()
 	}

@@ -1,6 +1,13 @@
 # MongoDB FTDC Metrics and Charts
 
-A dockerized tool to view MongoDB FTDC metrics.
+Introducing new dockerized tool designed to visualize MongoDB FTDC (Field Type Data Capture) metrics. This dashboard provides comprehensive insights into the performance and health of your MongoDB deployment.
+
+## New Features
+
+- FTDC Metrics: Gain visibility into various MongoDB metrics, including WiredTiger and storage engine statistics.
+- Customizable Charts: Customize charts to monitor specific metrics based on your requirements.
+- New Metrics: We've added Ops Counters Repl, Write Conflicts, Collection Scan, Cursors, TTL Delete, Flow Control and Document Operations metrics to provide deeper insights into your MongoDB deployment.
+- Enhanced Graphs: Replication lag and disk IOPS graphs have been enhanced for improved monitoring and analysis.
 
 ## Build
 
