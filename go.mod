@@ -3,9 +3,9 @@ module github.com/simagix/mongo-ftdc
 go 1.25
 
 require (
-	github.com/simagix/gox v0.2.4-0.20220131221741-09a85844aa15
+	github.com/simagix/gox v0.2.5
 	go.mongodb.org/mongo-driver v1.17.6
-	golang.org/x/text v0.17.0
+	golang.org/x/text v0.31.0
 )
 
-require github.com/golang/snappy v0.0.4 // indirect
+require github.com/golang/snappy v1.0.0 // indirect
