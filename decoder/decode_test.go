@@ -10,7 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-var filename = "testdata/diagnostic.data/metrics.2017-10-12T20-08-53Z-00000"
+var filename = "../diagnostic.data/metrics.2020-05-19T20-43-17Z-00000"
 
 func TestDecode(t *testing.T) {
 	var err error
@@ -47,7 +47,7 @@ func TestTraverseDocElem(t *testing.T) {
 	var docElem = bson.D{}
 	var attribsList = []string{}
 	bson.Unmarshal(m.Data[0].Block, &docElem) // first document
-	traverseDocElem(&attribsList, &dp.DataPointsMap, docElem, "")
+	traverseDocElem(&attribsList, &dp.DataPointsMap, docElem, "", 1) // sliceCap=1 for test
 	if len(attribsList) == 0 || len(dp.DataPointsMap) != len(attribsList) {
 		t.Fatal()
 	}

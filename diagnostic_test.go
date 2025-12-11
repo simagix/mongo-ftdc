@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-const DiagnosticDataDirectory = "../diagnostic.data"
-const DiagnosticDataFilename = DiagnosticDataDirectory + "/metrics.2017-10-12T20-08-53Z-00000"
+const DiagnosticDataDirectory = "diagnostic.data"
+const DiagnosticDataFilename = DiagnosticDataDirectory + "/metrics.2020-05-19T20-43-17Z-00000"
 
 func TestReadDiagnosticFiles(t *testing.T) {
 	var err error

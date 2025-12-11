@@ -29,8 +29,11 @@ func (m *Metrics) decode(buffer []byte) (MetricsData, error) {
 	ptr, _ := r.Seek(0, io.SeekCurrent)
 	r = bytes.NewReader(buffer[ptr:]) // reset reader to where deltas begin
 
+	// Pre-calculate total capacity needed: 1 (initial value) + NumDeltas
+	sliceCap := int(dp.NumDeltas) + 1
+
 	// use DOM (bson.D) to ensure orders
-	var attribsList = []string{}
+	var attribsList = make([]string, 0, numAttribs) // pre-allocate for known number of attributes
 	// systemMetrics
 	// end
 	// start
@@ -39,7 +42,7 @@ func (m *Metrics) decode(buffer []byte) (MetricsData, error) {
 	// local.oplog.rs.stats
 	var docElem = bson.D{}
 	bson.Unmarshal(buffer[:docSize], &docElem) // first document
-	traverseDocElem(&attribsList, &dp.DataPointsMap, docElem, "")
+	traverseDocElem(&attribsList, &dp.DataPointsMap, docElem, "", sliceCap)
 
 	if len(dp.DataPointsMap) != int(numAttribs) || len(attribsList) != int(numAttribs) {
 		return dp, errors.New("inconsistent FTDC data")
@@ -64,7 +67,7 @@ func (m *Metrics) decode(buffer []byte) (MetricsData, error) {
 				}
 			}
 			v += delta
-			list = append(list, v)
+			list = append(list, v) // no reallocation due to pre-allocated capacity
 		}
 		dp.DataPointsMap[attr] = list
 	}
@@ -72,19 +75,20 @@ func (m *Metrics) decode(buffer []byte) (MetricsData, error) {
 	return dp, err
 }
 
-func traverseDocElem(attribsList *[]string, attribsMap *map[string][]uint64, docElem interface{}, parentPath string) {
+func traverseDocElem(attribsList *[]string, attribsMap *map[string][]uint64, docElem interface{}, parentPath string, sliceCap int) {
 	switch value := docElem.(type) {
 	case bson.A:
 		for i, v := range value {
 			fld := parentPath + PathSeparator + strconv.Itoa(i)
-			traverseDocElem(attribsList, attribsMap, v, fld)
+			traverseDocElem(attribsList, attribsMap, v, fld, sliceCap)
 		}
 	case bool:
 		v := uint64(0)
 		if value {
 			v = 1
 		}
-		x := []uint64{v}
+		x := make([]uint64, 1, sliceCap) // pre-allocate for all deltas
+		x[0] = v
 		(*attribsMap)[parentPath] = x
 		(*attribsList) = append((*attribsList), parentPath)
 	case bson.D:
@@ -94,31 +98,45 @@ func traverseDocElem(attribsList *[]string, attribsMap *map[string][]uint64, doc
 			if parentPath != "" {
 				name = parentPath + PathSeparator + name
 			}
-			traverseDocElem(attribsList, attribsMap, elem.Value, name)
+			traverseDocElem(attribsList, attribsMap, elem.Value, name, sliceCap)
 		}
 	case primitive.Timestamp:
 		tKey := parentPath + "/t"
-		(*attribsMap)[tKey] = []uint64{uint64(0)}
+		tSlice := make([]uint64, 1, sliceCap)
+		tSlice[0] = uint64(0)
+		(*attribsMap)[tKey] = tSlice
 		(*attribsList) = append((*attribsList), tKey)
 		iKey := parentPath + "/i"
-		(*attribsMap)[iKey] = []uint64{uint64(0)}
+		iSlice := make([]uint64, 1, sliceCap)
+		iSlice[0] = uint64(0)
+		(*attribsMap)[iKey] = iSlice
 		(*attribsList) = append((*attribsList), iKey)
 	case primitive.ObjectID: // ignore it
 	case string: // ignore it
 	case float64:
-		(*attribsMap)[parentPath] = []uint64{uint64(value)}
+		s := make([]uint64, 1, sliceCap)
+		s[0] = uint64(value)
+		(*attribsMap)[parentPath] = s
 		(*attribsList) = append((*attribsList), parentPath)
 	case int:
-		(*attribsMap)[parentPath] = []uint64{uint64(value)}
+		s := make([]uint64, 1, sliceCap)
+		s[0] = uint64(value)
+		(*attribsMap)[parentPath] = s
 		(*attribsList) = append((*attribsList), parentPath)
 	case int32:
-		(*attribsMap)[parentPath] = []uint64{uint64(value)}
+		s := make([]uint64, 1, sliceCap)
+		s[0] = uint64(value)
+		(*attribsMap)[parentPath] = s
 		(*attribsList) = append((*attribsList), parentPath)
 	case int64:
-		(*attribsMap)[parentPath] = []uint64{uint64(value)}
+		s := make([]uint64, 1, sliceCap)
+		s[0] = uint64(value)
+		(*attribsMap)[parentPath] = s
 		(*attribsList) = append((*attribsList), parentPath)
 	case primitive.DateTime: // ignore it
-		(*attribsMap)[parentPath] = []uint64{uint64(value)}
+		s := make([]uint64, 1, sliceCap)
+		s[0] = uint64(value)
+		(*attribsMap)[parentPath] = s
 		(*attribsList) = append((*attribsList), parentPath)
 	default:
 		// log.Fatalf("'%s' ==> %T\n", parentPath, value)
