@@ -1,6 +1,5 @@
 # Copyright 2019-present Kuei-chun Chen. All rights reserved.
 # docker-compose.yaml
-version: "3"
 
 services:
   grafana-ftdc:

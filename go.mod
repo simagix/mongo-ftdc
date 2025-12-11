@@ -1,6 +1,6 @@
 module github.com/simagix/mongo-ftdc
 
-go 1.25
+go 1.23
 
 require (
 	github.com/simagix/gox v0.2.5

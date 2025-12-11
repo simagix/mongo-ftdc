@@ -1,60 +1,93 @@
 # MongoDB FTDC Metrics and Charts
 
-A dockerized tool to view MongoDB FTDC metrics.
+A dockerized tool to view MongoDB FTDC (Full-Time Diagnostic Data Capture) metrics with Grafana dashboards.
 
-## Build
+## Requirements
 
-Use `build.sh` to build *simagix/ftdc* and *simagix/grafana-ftdc* Docker images.
+- Docker and Docker Compose
+- Go 1.23+ (only if building from source)
+
+## Quick Start
+
+### 1. Build Docker Images
 
 ```bash
 ./build.sh docker
 ```
 
-## Startup
+This builds two images:
+- `simagix/ftdc` - FTDC data parser and API server
+- `simagix/grafana-ftdc` - Grafana with pre-configured dashboards
 
-Create a `diagnostic.data` directory if it doesn't exist yet:
+### 2. Prepare FTDC Data
+
+Create the data directory and copy your FTDC metrics files:
 
 ```bash
 mkdir -p ./diagnostic.data/
+cp /path/to/your/metrics.* ./diagnostic.data/
 ```
 
-Copy FTDC files to under directory *diagnostic.data*:
-
-```bash
-cp $SOMEWHERE/metrics.* ./diagnostic.data/
-```
-
-Bring up FTDC viewer:
+### 3. Start the Services
 
 ```bash
 docker-compose up -d
 ```
 
-## View FTDC Metrics
+### 4. View Metrics in Grafana
 
-- View results URL `http://localhost:3030/` using a browser.
-- Choose **MongoDB FTDC Analytics** from dashboard.
-- Change correct *From* and *To* date/time in the *Custom Range* panel.
+1. Open http://localhost:3030 in your browser
+2. Login with `admin` / `admin`
+3. Navigate to **Dashboards** → **MongoDB FTDC Analytics**
+4. Adjust the time range (top-right) to match your FTDC data timestamps
 
-## Read Other FTDC Data
+## Loading Different FTDC Data
 
-To read different FTDC files without restarting all Docker containers, remove all files from directory *diagnostic.data* and copy FTDC files to under the same directory.  Execute the command below to force FTDC data reload:
+### Option 1: Hot Reload (No Restart)
+
+Replace files and trigger a reload:
 
 ```bash
+rm ./diagnostic.data/*
+cp /path/to/new/metrics.* ./diagnostic.data/
 curl -XPOST http://localhost:5408/grafana/dir -d '{"dir": "/diagnostic.data"}'
 ```
 
-A JSON document is returned with information of the new endpoint, begin and end timestamps:
+Returns JSON with the new time range:
+```json
+{"endpoint":"/d/simagix-grafana/mongodb-mongo-ftdc?orgId=1&from=1550767345000&to=1550804249000","ok":1}
+```
 
-> {"endpoint":"/d/simagix-grafana/mongodb-mongo-ftdc?orgId=1\u0026from=1550767345000\u0026to=1550804249000","ok":1}
+### Option 2: Restart Containers
 
-Alternatively, you can simply run the command `docker-compose down` to bring down the entire cluster, edit the *docker-compose.yaml* file to point the *diagnostic.data* directory to a new location, and run `docker-compose up` to bring up the cluster again.
+```bash
+docker-compose down
+# Replace files in diagnostic.data/
+docker-compose up -d
+```
 
 ## Shutdown
 
 ```bash
 docker-compose down
 ```
+
+## Building from Source
+
+To build the binary locally (without Docker):
+
+```bash
+./build.sh
+./dist/ftdc_json -version
+./dist/ftdc_json /path/to/diagnostic.data/
+```
+
+## Ports
+
+| Service | Port | Description |
+|---------|------|-------------|
+| Grafana | 3030 | Web UI |
+| FTDC API | 5408 | Data backend |
 
 ## Disclaimer
 
