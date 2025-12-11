@@ -44,7 +44,8 @@ func (m *Metrics) decode(buffer []byte) (MetricsData, error) {
 	bson.Unmarshal(buffer[:docSize], &docElem) // first document
 	traverseDocElem(&attribsList, &dp.DataPointsMap, docElem, "", sliceCap)
 
-	if len(dp.DataPointsMap) != int(numAttribs) || len(attribsList) != int(numAttribs) {
+	// Verify list matches header (map may have fewer due to duplicate BSON keys)
+	if len(attribsList) != int(numAttribs) {
 		return dp, errors.New("inconsistent FTDC data")
 	}
 
@@ -75,6 +76,18 @@ func (m *Metrics) decode(buffer []byte) (MetricsData, error) {
 	return dp, err
 }
 
+// addAttribute adds an attribute, handling BSON duplicate keys by only adding to map once
+func addAttribute(attribsList *[]string, attribsMap *map[string][]uint64, key string, val uint64, sliceCap int) {
+	// Always add to list (needed for delta processing order)
+	(*attribsList) = append((*attribsList), key)
+	// Only add to map if key is new (duplicates share the same slice)
+	if _, exists := (*attribsMap)[key]; !exists {
+		s := make([]uint64, 1, sliceCap)
+		s[0] = val
+		(*attribsMap)[key] = s
+	}
+}
+
 func traverseDocElem(attribsList *[]string, attribsMap *map[string][]uint64, docElem interface{}, parentPath string, sliceCap int) {
 	switch value := docElem.(type) {
 	case bson.A:
@@ -87,10 +100,7 @@ func traverseDocElem(attribsList *[]string, attribsMap *map[string][]uint64, doc
 		if value {
 			v = 1
 		}
-		x := make([]uint64, 1, sliceCap) // pre-allocate for all deltas
-		x[0] = v
-		(*attribsMap)[parentPath] = x
-		(*attribsList) = append((*attribsList), parentPath)
+		addAttribute(attribsList, attribsMap, parentPath, v, sliceCap)
 	case bson.D:
 		elem := docElem.(bson.D)
 		for _, elem := range elem {
@@ -102,42 +112,21 @@ func traverseDocElem(attribsList *[]string, attribsMap *map[string][]uint64, doc
 		}
 	case primitive.Timestamp:
 		tKey := parentPath + "/t"
-		tSlice := make([]uint64, 1, sliceCap)
-		tSlice[0] = uint64(0)
-		(*attribsMap)[tKey] = tSlice
-		(*attribsList) = append((*attribsList), tKey)
+		addAttribute(attribsList, attribsMap, tKey, uint64(0), sliceCap)
 		iKey := parentPath + "/i"
-		iSlice := make([]uint64, 1, sliceCap)
-		iSlice[0] = uint64(0)
-		(*attribsMap)[iKey] = iSlice
-		(*attribsList) = append((*attribsList), iKey)
+		addAttribute(attribsList, attribsMap, iKey, uint64(0), sliceCap)
 	case primitive.ObjectID: // ignore it
 	case string: // ignore it
 	case float64:
-		s := make([]uint64, 1, sliceCap)
-		s[0] = uint64(value)
-		(*attribsMap)[parentPath] = s
-		(*attribsList) = append((*attribsList), parentPath)
+		addAttribute(attribsList, attribsMap, parentPath, uint64(value), sliceCap)
 	case int:
-		s := make([]uint64, 1, sliceCap)
-		s[0] = uint64(value)
-		(*attribsMap)[parentPath] = s
-		(*attribsList) = append((*attribsList), parentPath)
+		addAttribute(attribsList, attribsMap, parentPath, uint64(value), sliceCap)
 	case int32:
-		s := make([]uint64, 1, sliceCap)
-		s[0] = uint64(value)
-		(*attribsMap)[parentPath] = s
-		(*attribsList) = append((*attribsList), parentPath)
+		addAttribute(attribsList, attribsMap, parentPath, uint64(value), sliceCap)
 	case int64:
-		s := make([]uint64, 1, sliceCap)
-		s[0] = uint64(value)
-		(*attribsMap)[parentPath] = s
-		(*attribsList) = append((*attribsList), parentPath)
-	case primitive.DateTime: // ignore it
-		s := make([]uint64, 1, sliceCap)
-		s[0] = uint64(value)
-		(*attribsMap)[parentPath] = s
-		(*attribsList) = append((*attribsList), parentPath)
+		addAttribute(attribsList, attribsMap, parentPath, uint64(value), sliceCap)
+	case primitive.DateTime:
+		addAttribute(attribsList, attribsMap, parentPath, uint64(value), sliceCap)
 	default:
 		// log.Fatalf("'%s' ==> %T\n", parentPath, value)
 	}

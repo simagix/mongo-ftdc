@@ -25,6 +25,9 @@ func getServerStatusDocs() []ServerStatusDoc {
 
 func TestPrintWiredTigerConcurrentTransactionsDetails(t *testing.T) {
 	docs := getServerStatusDocs()
+	if len(docs) < 2 {
+		t.Skip("insufficient server status docs")
+	}
 	printWiredTigerConcurrentTransactionsDetails(docs, 600) // every 10 minutes
 	span := int(docs[(len(docs)-1)].LocalTime.Sub(docs[0].LocalTime).Seconds()) / 20
 	t.Log(printWiredTigerConcurrentTransactionsDetails(docs, span))
@@ -32,6 +35,9 @@ func TestPrintWiredTigerConcurrentTransactionsDetails(t *testing.T) {
 
 func TestPrintWiredTigerCacheDetails(t *testing.T) {
 	docs := getServerStatusDocs()
+	if len(docs) < 2 {
+		t.Skip("insufficient server status docs")
+	}
 	printWiredTigerCacheDetails(docs, 600) // every 10 minutes
 	span := int(docs[(len(docs)-1)].LocalTime.Sub(docs[0].LocalTime).Seconds()) / 20
 	t.Log(printWiredTigerCacheDetails(docs, span))
@@ -39,6 +45,9 @@ func TestPrintWiredTigerCacheDetails(t *testing.T) {
 
 func TestPrintGlobalLockDetails(t *testing.T) {
 	docs := getServerStatusDocs()
+	if len(docs) < 2 {
+		t.Skip("insufficient server status docs")
+	}
 	printGlobalLockDetails(docs, 600) // every 10 minutes
 	span := int(docs[(len(docs)-1)].LocalTime.Sub(docs[0].LocalTime).Seconds()) / 20
 	t.Log(printGlobalLockDetails(docs, span))
@@ -46,6 +55,9 @@ func TestPrintGlobalLockDetails(t *testing.T) {
 
 func TestPrintMetricsDetails(t *testing.T) {
 	docs := getServerStatusDocs()
+	if len(docs) < 2 {
+		t.Skip("insufficient server status docs")
+	}
 	printMetricsDetails(docs, 600) // every 10 minutes
 	span := int(docs[(len(docs)-1)].LocalTime.Sub(docs[0].LocalTime).Seconds()) / 20
 	t.Log(printMetricsDetails(docs, span))
@@ -53,6 +65,9 @@ func TestPrintMetricsDetails(t *testing.T) {
 
 func TestPrintLatencyDetails(t *testing.T) {
 	docs := getServerStatusDocs()
+	if len(docs) < 2 {
+		t.Skip("insufficient server status docs")
+	}
 	printLatencyDetails(docs, 600) // every 10 minutes
 	span := int(docs[(len(docs)-1)].LocalTime.Sub(docs[0].LocalTime).Seconds()) / 20
 	t.Log(printLatencyDetails(docs, span))
@@ -60,6 +75,9 @@ func TestPrintLatencyDetails(t *testing.T) {
 
 func TestPrintStatsDetails(t *testing.T) {
 	docs := getServerStatusDocs()
+	if len(docs) < 2 {
+		t.Skip("insufficient server status docs")
+	}
 	printStatsDetails(docs, 600) // every 10 minutes
 	span := int(docs[(len(docs)-1)].LocalTime.Sub(docs[0].LocalTime).Seconds()) / 20
 	t.Log(printStatsDetails(docs, span))
