@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/simagix/gox"
@@ -146,12 +147,21 @@ func (d *DiagnosticData) readDiagnosticFiles(filenames []string) error {
 
 	btime := time.Now()
 	log.Printf("reading %d files with %d second(s) interval\n", len(filenames), 1)
-	var diagDataMap = map[string]DiagnosticData{}
+
+	// Use a slice instead of map to avoid race condition, protected by mutex
+	type fileResult struct {
+		filename string
+		data     DiagnosticData
+		err      error
+	}
+	results := make([]fileResult, 0, len(filenames))
+	var mu sync.Mutex
+
 	nThreads := runtime.NumCPU() - 1
 	if nThreads < 1 {
 		nThreads = 1
 	}
-	var wg = gox.NewWaitGroup(nThreads) // use 4 threads to read
+	var wg = gox.NewWaitGroup(nThreads)
 	for threadNum := 0; threadNum < len(filenames); threadNum++ {
 		filename := filenames[threadNum]
 		if !strings.Contains(filename, "metrics.") {
@@ -160,26 +170,49 @@ func (d *DiagnosticData) readDiagnosticFiles(filenames []string) error {
 		wg.Add(1)
 		go func(filename string) {
 			defer wg.Done()
-			var diagData DiagnosticData
-			if diagData, err = d.readDiagnosticFile(filename); err == nil {
-				diagDataMap[filename] = diagData
-			}
+			diagData, ferr := d.readDiagnosticFile(filename)
+			mu.Lock()
+			results = append(results, fileResult{filename: filename, data: diagData, err: ferr})
+			mu.Unlock()
 		}(filename)
 	}
 	wg.Wait()
 
-	keys := []string{}
-	for k := range diagDataMap {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		if diagDataMap[key].ServerInfo != nil {
-			d.ServerInfo = diagDataMap[key].ServerInfo
+	// Sort by filename to ensure consistent ordering
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].filename < results[j].filename
+	})
+
+	// Pre-calculate total sizes for pre-allocation
+	totalServerStatus := 0
+	totalSystemMetrics := 0
+	totalReplSetStatus := 0
+	for _, r := range results {
+		if r.err != nil {
+			continue
 		}
-		d.ServerStatusList = append(d.ServerStatusList, diagDataMap[key].ServerStatusList...)
-		d.SystemMetricsList = append(d.SystemMetricsList, diagDataMap[key].SystemMetricsList...)
-		d.ReplSetStatusList = append(d.ReplSetStatusList, diagDataMap[key].ReplSetStatusList...)
+		totalServerStatus += len(r.data.ServerStatusList)
+		totalSystemMetrics += len(r.data.SystemMetricsList)
+		totalReplSetStatus += len(r.data.ReplSetStatusList)
+	}
+
+	// Pre-allocate slices
+	d.ServerStatusList = make([]ServerStatusDoc, 0, totalServerStatus)
+	d.SystemMetricsList = make([]SystemMetricsDoc, 0, totalSystemMetrics)
+	d.ReplSetStatusList = make([]ReplSetStatusDoc, 0, totalReplSetStatus)
+
+	// Merge results
+	for _, r := range results {
+		if r.err != nil {
+			err = r.err
+			continue
+		}
+		if r.data.ServerInfo != nil {
+			d.ServerInfo = r.data.ServerInfo
+		}
+		d.ServerStatusList = append(d.ServerStatusList, r.data.ServerStatusList...)
+		d.SystemMetricsList = append(d.SystemMetricsList, r.data.SystemMetricsList...)
+		d.ReplSetStatusList = append(d.ReplSetStatusList, r.data.ReplSetStatusList...)
 	}
 	log.Println(len(filenames), "files loaded, time spent:", time.Since(btime))
 	return err
@@ -203,6 +236,18 @@ func (d *DiagnosticData) readDiagnosticFile(filename string) (DiagnosticData, er
 	metrics := decoder.NewMetrics()
 	metrics.ReadAllMetrics(&buffer)
 	diagData.ServerInfo = metrics.Doc
+
+	// Pre-calculate total capacity needed
+	totalDeltas := 0
+	for _, v := range metrics.Data {
+		totalDeltas += int(v.NumDeltas)
+	}
+
+	// Pre-allocate slices
+	diagData.ServerStatusList = make([]ServerStatusDoc, 0, totalDeltas)
+	diagData.SystemMetricsList = make([]SystemMetricsDoc, 0, totalDeltas)
+	diagData.ReplSetStatusList = make([]ReplSetStatusDoc, 0, len(metrics.Data))
+
 	for _, v := range metrics.Data {
 		var doc DiagnosticDoc
 		bson.Unmarshal(v.Block, &doc) // first document

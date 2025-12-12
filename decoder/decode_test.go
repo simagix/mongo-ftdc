@@ -10,7 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-var filename = "../diagnostic.data/metrics.2025-12-10T21-34-36Z-00000"
+var filename = "../testdata/metrics.2020-05-13T14-20-19Z-00000"
 
 func TestDecode(t *testing.T) {
 	var err error

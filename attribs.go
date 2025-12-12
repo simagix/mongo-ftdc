@@ -11,14 +11,41 @@ import (
 	"github.com/simagix/mongo-ftdc/decoder"
 )
 
+const diskMetricsPrefix = "systemMetrics/disks/"
+
 // Attribs stores attribs map
 type Attribs struct {
 	attribsMap *map[string][]uint64
+	diskKeys   []diskKeyInfo // cached disk keys for efficient iteration
+}
+
+// diskKeyInfo stores pre-parsed disk key information
+type diskKeyInfo struct {
+	fullKey  string
+	diskName string
+	statName string
 }
 
 // NewAttribs returns Attribs structure
 func NewAttribs(attribsMap *map[string][]uint64) *Attribs {
-	return &Attribs{attribsMap: attribsMap}
+	attr := &Attribs{attribsMap: attribsMap}
+	// Pre-filter and parse disk keys once
+	attr.diskKeys = make([]diskKeyInfo, 0)
+	for key := range *attribsMap {
+		if strings.HasPrefix(key, diskMetricsPrefix) {
+			// Parse: "systemMetrics/disks/sda/read_time_ms"
+			suffix := key[len(diskMetricsPrefix):] // "sda/read_time_ms"
+			slashIdx := strings.Index(suffix, decoder.PathSeparator)
+			if slashIdx > 0 {
+				attr.diskKeys = append(attr.diskKeys, diskKeyInfo{
+					fullKey:  key,
+					diskName: suffix[:slashIdx],
+					statName: suffix[slashIdx+1:],
+				})
+			}
+		}
+	}
+	return attr
 }
 
 // GetServerStatusDataPoints returns server status
@@ -104,8 +131,7 @@ func (attr *Attribs) GetServerStatusDataPoints(i int) ServerStatusDoc {
 
 // GetSystemMetricsDataPoints returns system metrics
 func (attr *Attribs) GetSystemMetricsDataPoints(i int) SystemMetricsDoc {
-	attribs := *attr.attribsMap
-	sm := SystemMetricsDoc{Disks: map[string]DiskMetrics{}}
+	sm := SystemMetricsDoc{Disks: make(map[string]DiskMetrics)}
 	sm.Start = time.Unix(0, int64(time.Millisecond)*int64(attr.get("serverStatus/localTime", i)))
 	sm.CPU.IdleMS = attr.get("systemMetrics/cpu/idle_ms", i)
 	sm.CPU.UserMS = attr.get("systemMetrics/cpu/user_ms", i)
@@ -114,34 +140,29 @@ func (attr *Attribs) GetSystemMetricsDataPoints(i int) SystemMetricsDoc {
 	sm.CPU.SoftirqMS = attr.get("systemMetrics/cpu/softirq_ms", i)
 	sm.CPU.StealMS = attr.get("systemMetrics/cpu/steal_ms", i)
 	sm.CPU.SystemMS = attr.get("systemMetrics/cpu/system_ms", i)
-	for key := range attribs {
-		if strings.Index(key, "systemMetrics/disks/") != 0 {
-			continue
-		}
-		tokens := strings.Split(key, decoder.PathSeparator)
-		disk := tokens[2]
-		stats := tokens[3]
-		if _, ok := sm.Disks[disk]; !ok {
-			sm.Disks[disk] = DiskMetrics{}
-		}
-		m := sm.Disks[disk]
-		switch stats {
+
+	// Use pre-cached disk keys instead of iterating entire map
+	for _, dk := range attr.diskKeys {
+		m := sm.Disks[dk.diskName] // zero value if not exists
+		switch dk.statName {
 		case "read_time_ms":
-			m.ReadTimeMS = attr.get(key, i)
+			m.ReadTimeMS = attr.get(dk.fullKey, i)
 		case "write_time_ms":
-			m.WriteTimeMS = attr.get(key, i)
+			m.WriteTimeMS = attr.get(dk.fullKey, i)
 		case "io_queued_ms":
-			m.IOQueuedMS = attr.get(key, i)
+			m.IOQueuedMS = attr.get(dk.fullKey, i)
 		case "io_time_ms":
-			m.IOTimeMS = attr.get(key, i)
+			m.IOTimeMS = attr.get(dk.fullKey, i)
 		case "reads":
-			m.Reads = attr.get(key, i)
+			m.Reads = attr.get(dk.fullKey, i)
 		case "writes":
-			m.Writes = attr.get(key, i)
+			m.Writes = attr.get(dk.fullKey, i)
 		case "io_in_progress":
-			m.IOInProgress = attr.get(key, i)
+			m.IOInProgress = attr.get(dk.fullKey, i)
+		default:
+			continue // skip unknown stats, don't update map
 		}
-		sm.Disks[disk] = m
+		sm.Disks[dk.diskName] = m
 	}
 	return sm
 }

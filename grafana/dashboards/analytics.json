@@ -3285,10 +3285,7 @@
   "templating": {
     "list": []
   },
-  "time": {
-    "from": "2020-05-20T13:14:26.757Z",
-    "to": "2020-05-20T13:35:16.851Z"
-  },
+  "time": {},
   "timepicker": {
     "refresh_intervals": [
       "5s",

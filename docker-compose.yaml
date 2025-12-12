@@ -8,7 +8,10 @@ services:
     ports:
       - "3030:3000"
     environment:
-      GF_INSTALL_PLUGINS: simpod-json-datasource
+      GF_PLUGINS_PREINSTALL: simpod-json-datasource
+      GF_LOG_LEVEL: error
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
 
   ftdc:
     image: simagix/ftdc:latest

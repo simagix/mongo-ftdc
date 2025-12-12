@@ -2272,8 +2272,8 @@
     "list": []
   },
   "time": {
-    "from": "2020-05-19T20:43:18.000Z",
-    "to": "2020-05-20T15:43:16.000Z"
+    "from": "now-24h",
+    "to": "now"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -2302,6 +2302,6 @@
   },
   "timezone": "",
   "title": "MongoDB FTDC Analytics",
-  "uid": "simagix-grafana",
+  "uid": "simagix-grafana-legacy",
   "version": 77
 }

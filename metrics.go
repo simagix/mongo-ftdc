@@ -85,23 +85,20 @@ func (m *Metrics) SetVerbose(verbose bool) { m.verbose = verbose }
 // SetLatest sets latest
 func (m *Metrics) SetLatest(latest int) { m.latest = latest }
 
+// GetEndPoints returns the Grafana endpoints
+func (m *Metrics) GetEndPoints() []string { return m.endpoints }
+
 // ProcessFiles reads metrics files/data
 func (m *Metrics) ProcessFiles(filenames []string) error {
 	hostname, _ := os.Hostname()
-	port := 3000
 	filenames = GetMetricsFilenames(filenames)
 	if len(filenames) == 0 {
-		// t := time.Now().Unix() * 1000
-		// minute := int64(60) * 1000
-		// endpoint := fmt.Sprintf(analyticsEndpoint, t, t+(10*minute))
-		// log.Println(fmt.Sprintf("http://localhost:%d%v", port, endpoint))
 		return errors.New("no valid data file found")
 	}
 	if m.latest > 0 && m.latest < len(filenames) {
 		filenames = filenames[len(filenames)-m.latest:]
 	}
 	if hostname == "ftdc" { // from docker-compose
-		port = 3030
 		if len(filenames) > 3 { // avoid OOM killer
 			fmt.Println("* limits to latest 3 files in a Docker container")
 			filenames = filenames[len(filenames)-3:]
@@ -113,9 +110,6 @@ func (m *Metrics) ProcessFiles(filenames []string) error {
 	}
 	m.endpoints = diag.endpoints
 	m.AddFTDCDetailStats(diag)
-	for _, endpoint := range diag.endpoints {
-		log.Printf("http://localhost:%d%v\n", port, endpoint)
-	}
 	return nil
 }
 
@@ -336,15 +330,10 @@ func (m *Metrics) AddFTDCDetailStats(diag *DiagnosticData) {
 
 	b, _ := json.Marshal(diag.ServerInfo)
 	btm := time.Now()
-	var wiredTigerTSD map[string]TimeSeriesDoc
 	var replicationTSD map[string]TimeSeriesDoc
 	var systemMetricsTSD map[string]TimeSeriesDoc
-	var queuesTSD map[string]TimeSeriesDoc
-	var transactionsTSD map[string]TimeSeriesDoc
-	var tcmallocTSD map[string]TimeSeriesDoc
-	var flowControlTSD map[string]TimeSeriesDoc
 
-	var wg = gox.NewWaitGroup(8) // use 8 threads to read
+	var wg = gox.NewWaitGroup(3) // use 3 threads to read
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -358,55 +347,16 @@ func (m *Metrics) AddFTDCDetailStats(diag *DiagnosticData) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		ftdc.TimeSeriesData = getServerStatusTimeSeriesDoc(ftdc.ServerStatusList) // ServerStatus
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		wiredTigerTSD = getWiredTigerTimeSeriesDoc(ftdc.ServerStatusList) // WiredTiger
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		queuesTSD = getQueuesTimeSeriesDoc(ftdc.ServerStatusList) // Queues (MongoDB 7.0+)
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		transactionsTSD = getTransactionsTimeSeriesDoc(ftdc.ServerStatusList) // Transactions
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		tcmallocTSD = getTcmallocTimeSeriesDoc(ftdc.ServerStatusList) // tcmalloc
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		flowControlTSD = getFlowControlTimeSeriesDoc(ftdc.ServerStatusList) // Flow Control
+		// Single pass for all ServerStatus-based metrics (ServerStatus, WiredTiger, Queues, Transactions, tcmalloc, FlowControl)
+		ftdc.TimeSeriesData = getAllServerStatusTimeSeriesDoc(ftdc.ServerStatusList)
 	}()
 	wg.Wait()
 
-	// merge
-	for k, v := range wiredTigerTSD {
-		ftdc.TimeSeriesData[k] = v
-	}
+	// merge replication and system metrics
 	for k, v := range replicationTSD {
 		ftdc.TimeSeriesData[k] = v
 	}
 	for k, v := range systemMetricsTSD {
-		ftdc.TimeSeriesData[k] = v
-	}
-	for k, v := range queuesTSD {
-		ftdc.TimeSeriesData[k] = v
-	}
-	for k, v := range transactionsTSD {
-		ftdc.TimeSeriesData[k] = v
-	}
-	for k, v := range tcmallocTSD {
-		ftdc.TimeSeriesData[k] = v
-	}
-	for k, v := range flowControlTSD {
 		ftdc.TimeSeriesData[k] = v
 	}
 	json.Unmarshal(b, &ftdc.ServerInfo)

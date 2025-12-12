@@ -738,8 +738,8 @@
     "list": []
   },
   "time": {
-    "from": "2020-05-13T14:20:20.000Z",
-    "to": "2020-05-13T21:20:18.000Z"
+    "from": "now-24h",
+    "to": "now"
   },
   "timepicker": {
     "refresh_intervals": [

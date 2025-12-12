@@ -65,3 +65,30 @@ func TestAddFTDCDetailStats(t *testing.T) {
 	diag.DecodeDiagnosticData(filenames)
 	metrics.AddFTDCDetailStats(diag)
 }
+
+func BenchmarkGetAllServerStatusTimeSeriesDoc(b *testing.B) {
+	d := NewDiagnosticData()
+	var filenames = []string{DiagnosticDataFilename}
+	if err := d.DecodeDiagnosticData(filenames); err != nil {
+		b.Skip("no test data available")
+	}
+	if len(d.ServerStatusList) == 0 {
+		b.Skip("no server status data")
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = getAllServerStatusTimeSeriesDoc(d.ServerStatusList)
+	}
+}
+
+func BenchmarkDataPoint(b *testing.B) {
+	tm := float64(time.Now().UnixNano() / 1000 / 1000)
+	v := 123.45
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = dataPoint(v, tm)
+	}
+}

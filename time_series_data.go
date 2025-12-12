@@ -13,7 +13,8 @@ import (
 	"time"
 )
 
-var mb = (1024.0 * 1024)
+const mb = 1024.0 * 1024
+const gb = 1024.0 * 1024 * 1024
 
 // TimeSeriesDoc -
 type TimeSeriesDoc struct {
@@ -83,14 +84,33 @@ var systemMetricsChartsLegends = []string{
 	"disks_utils", "disks_iops", "io_in_progress", "read_time_ms", "write_time_ms", "io_queued_ms"}
 var replSetChartsLegends = []string{"replication_lags"}
 
-func getDataPoint(v float64, t float64) []float64 {
-	dp := []float64{}
+// dataPoint returns a pre-allocated 2-element slice [value, timestamp]
+func dataPoint(v, t float64) []float64 {
 	if v < 0 {
 		v = 0
 	}
-	dp = append(dp, v)
-	dp = append(dp, t)
-	return dp
+	return []float64{v, t}
+}
+
+// initTimeSeriesMap creates a map with pre-allocated slices for each legend
+func initTimeSeriesMap(legends []string, capacity int) map[string]*TimeSeriesDoc {
+	m := make(map[string]*TimeSeriesDoc, len(legends))
+	for _, legend := range legends {
+		m[legend] = &TimeSeriesDoc{
+			Target:     legend,
+			DataPoints: make([][]float64, 0, capacity),
+		}
+	}
+	return m
+}
+
+// toValueMap converts pointer map to value map for return
+func toValueMap(m map[string]*TimeSeriesDoc) map[string]TimeSeriesDoc {
+	result := make(map[string]TimeSeriesDoc, len(m))
+	for k, v := range m {
+		result[k] = *v
+	}
+	return result
 }
 
 func getReplSetGetStatusTimeSeriesDoc(replSetGetStatusList []ReplSetStatusDoc, legends *[]string) (map[string]TimeSeriesDoc, map[string]TimeSeriesDoc) {
@@ -152,7 +172,7 @@ func getReplSetGetStatusTimeSeriesDoc(replSetGetStatusList []ReplSetStatusDoc, l
 					continue
 				}
 				x := replicationLags[hosts[i]]
-				x.DataPoints = append(x.DataPoints, getDataPoint(v, t))
+				x.DataPoints = append(x.DataPoints, dataPoint(v, t))
 				replicationLags[hosts[i]] = x
 			}
 		}
@@ -163,452 +183,260 @@ func getReplSetGetStatusTimeSeriesDoc(replSetGetStatusList []ReplSetStatusDoc, l
 }
 
 func getSystemMetricsTimeSeriesDoc(systemMetricsList []SystemMetricsDoc) (map[string]TimeSeriesDoc, map[string]DiskStats) {
-	var timeSeriesData = map[string]TimeSeriesDoc{}
-	var diskStats = map[string]DiskStats{}
-	var pstat = SystemMetricsDoc{}
+	n := len(systemMetricsList)
+	tsData := initTimeSeriesMap(systemMetricsChartsLegends, n)
+	diskStats := make(map[string]DiskStats)
+	var pstat SystemMetricsDoc
 
-	for _, legend := range systemMetricsChartsLegends {
-		timeSeriesData[legend] = TimeSeriesDoc{legend, [][]float64{}}
-	}
 	for i, stat := range systemMetricsList {
+		if i == 0 {
+			pstat = stat
+			continue
+		}
+
+		t := float64(stat.Start.UnixNano() / (1000 * 1000))
+		seconds := stat.Start.Sub(pstat.Start).Seconds()
+		if seconds < 1 {
+			seconds = 1
+		}
+
+		for k, disk := range stat.Disks {
+			pdisk := pstat.Disks[k]
+			u := 100 * float64(disk.IOTimeMS-pdisk.IOTimeMS) / 1000
+			iops := float64(disk.Reads+disk.Writes-(pdisk.Reads+pdisk.Writes)) / seconds
+
+			ds := diskStats[k]
+			ds.Utilization.DataPoints = append(ds.Utilization.DataPoints, dataPoint(u, t))
+			ds.IOPS.DataPoints = append(ds.IOPS.DataPoints, dataPoint(iops, t))
+			ds.IOInProgress.DataPoints = append(ds.IOInProgress.DataPoints, dataPoint(float64(disk.IOInProgress), t))
+			ds.ReadTimeMS.DataPoints = append(ds.ReadTimeMS.DataPoints, dataPoint(float64(disk.ReadTimeMS-pdisk.ReadTimeMS), t))
+			ds.WriteTimeMS.DataPoints = append(ds.WriteTimeMS.DataPoints, dataPoint(float64(disk.WriteTimeMS-pdisk.WriteTimeMS), t))
+			ds.IOQueuedMS.DataPoints = append(ds.IOQueuedMS.DataPoints, dataPoint(float64(disk.IOQueuedMS-pdisk.IOQueuedMS), t))
+			diskStats[k] = ds
+		}
+
+		totalMS := float64(stat.CPU.IOWaitMS + stat.CPU.IdleMS + stat.CPU.NiceMS + stat.CPU.SoftirqMS + stat.CPU.StealMS + stat.CPU.SystemMS + stat.CPU.UserMS)
+		ptotalMS := float64(pstat.CPU.IOWaitMS + pstat.CPU.IdleMS + pstat.CPU.NiceMS + pstat.CPU.SoftirqMS + pstat.CPU.StealMS + pstat.CPU.SystemMS + pstat.CPU.UserMS)
+		deltaTotalMS := totalMS - ptotalMS
+		if deltaTotalMS == 0 {
+			deltaTotalMS = 1
+		}
+
+		tsData["cpu_idle"].DataPoints = append(tsData["cpu_idle"].DataPoints, dataPoint(100*float64(stat.CPU.IdleMS-pstat.CPU.IdleMS)/deltaTotalMS, t))
+		tsData["cpu_iowait"].DataPoints = append(tsData["cpu_iowait"].DataPoints, dataPoint(100*float64(stat.CPU.IOWaitMS-pstat.CPU.IOWaitMS)/deltaTotalMS, t))
+		tsData["cpu_system"].DataPoints = append(tsData["cpu_system"].DataPoints, dataPoint(100*float64(stat.CPU.SystemMS-pstat.CPU.SystemMS)/deltaTotalMS, t))
+		tsData["cpu_user"].DataPoints = append(tsData["cpu_user"].DataPoints, dataPoint(100*float64(stat.CPU.UserMS-pstat.CPU.UserMS)/deltaTotalMS, t))
+		tsData["cpu_nice"].DataPoints = append(tsData["cpu_nice"].DataPoints, dataPoint(100*float64(stat.CPU.NiceMS-pstat.CPU.NiceMS)/deltaTotalMS, t))
+		tsData["cpu_steal"].DataPoints = append(tsData["cpu_steal"].DataPoints, dataPoint(100*float64(stat.CPU.StealMS-pstat.CPU.StealMS)/deltaTotalMS, t))
+		tsData["cpu_softirq"].DataPoints = append(tsData["cpu_softirq"].DataPoints, dataPoint(100*float64(stat.CPU.SoftirqMS-pstat.CPU.SoftirqMS)/deltaTotalMS, t))
+
+		pstat = stat
+	}
+	return toValueMap(tsData), diskStats
+}
+
+// getAllServerStatusTimeSeriesDoc processes all server status metrics in a single pass
+func getAllServerStatusTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]TimeSeriesDoc {
+	n := len(serverStatusList)
+	if n == 0 {
+		return map[string]TimeSeriesDoc{}
+	}
+
+	// Combine all legends for single-pass processing
+	allLegends := make([]string, 0, len(serverStatusChartsLegends)+len(wiredTigerChartsLegends)+
+		len(queuesChartsLegends)+len(transactionsChartsLegends)+len(tcmallocChartsLegends)+len(flowControlChartsLegends))
+	allLegends = append(allLegends, serverStatusChartsLegends...)
+	allLegends = append(allLegends, wiredTigerChartsLegends...)
+	allLegends = append(allLegends, queuesChartsLegends...)
+	allLegends = append(allLegends, transactionsChartsLegends...)
+	allLegends = append(allLegends, tcmallocChartsLegends...)
+	allLegends = append(allLegends, flowControlChartsLegends...)
+
+	ts := initTimeSeriesMap(allLegends, n)
+	var pstat ServerStatusDoc
+
+	for i, stat := range serverStatusList {
+		if stat.Uptime <= pstat.Uptime {
+			pstat = stat
+			continue
+		}
+
+		t := float64(stat.LocalTime.UnixNano() / (1000 * 1000))
+
+		// === Server Status metrics (gauges - no delta needed) ===
+		ts["mem_resident"].DataPoints = append(ts["mem_resident"].DataPoints, dataPoint(float64(stat.Mem.Resident)/1024, t))
+		ts["mem_virtual"].DataPoints = append(ts["mem_virtual"].DataPoints, dataPoint(float64(stat.Mem.Virtual)/1024, t))
+		ts["conns_active"].DataPoints = append(ts["conns_active"].DataPoints, dataPoint(float64(stat.Connections.Active), t))
+		ts["conns_available"].DataPoints = append(ts["conns_available"].DataPoints, dataPoint(float64(stat.Connections.Available), t))
+		ts["conns_current"].DataPoints = append(ts["conns_current"].DataPoints, dataPoint(float64(stat.Connections.Current), t))
+		ts["q_active_read"].DataPoints = append(ts["q_active_read"].DataPoints, dataPoint(float64(stat.GlobalLock.ActiveClients.Readers), t))
+		ts["q_active_write"].DataPoints = append(ts["q_active_write"].DataPoints, dataPoint(float64(stat.GlobalLock.ActiveClients.Writers), t))
+		ts["q_queued_read"].DataPoints = append(ts["q_queued_read"].DataPoints, dataPoint(float64(stat.GlobalLock.CurrentQueue.Readers), t))
+		ts["q_queued_write"].DataPoints = append(ts["q_queued_write"].DataPoints, dataPoint(float64(stat.GlobalLock.CurrentQueue.Writers), t))
+
+		// Latencies (computed)
+		var r, w, c float64
+		if stat.OpLatencies.Reads.Ops > 0 {
+			r = float64(stat.OpLatencies.Reads.Latency) / float64(stat.OpLatencies.Reads.Ops) / 1000
+		}
+		if stat.OpLatencies.Writes.Ops > 0 {
+			w = float64(stat.OpLatencies.Writes.Latency) / float64(stat.OpLatencies.Writes.Ops) / 1000
+		}
+		if stat.OpLatencies.Commands.Ops > 0 {
+			c = float64(stat.OpLatencies.Commands.Latency) / float64(stat.OpLatencies.Commands.Ops) / 1000
+		}
+		ts["latency_read"].DataPoints = append(ts["latency_read"].DataPoints, dataPoint(r, t))
+		ts["latency_write"].DataPoints = append(ts["latency_write"].DataPoints, dataPoint(w, t))
+		ts["latency_command"].DataPoints = append(ts["latency_command"].DataPoints, dataPoint(c, t))
+
+		// === WiredTiger metrics (gauges) ===
+		ts["wt_cache_max"].DataPoints = append(ts["wt_cache_max"].DataPoints, dataPoint(float64(stat.WiredTiger.Cache.MaxBytesConfigured)/gb, t))
+		ts["wt_cache_used"].DataPoints = append(ts["wt_cache_used"].DataPoints, dataPoint(float64(stat.WiredTiger.Cache.CurrentlyInCache)/gb, t))
+		ts["wt_cache_dirty"].DataPoints = append(ts["wt_cache_dirty"].DataPoints, dataPoint(float64(stat.WiredTiger.Cache.TrackedDirtyBytes)/gb, t))
+		ts["wt_dhandles_active"].DataPoints = append(ts["wt_dhandles_active"].DataPoints, dataPoint(float64(stat.WiredTiger.DataHandle.Active), t))
+		ts["ticket_avail_read"].DataPoints = append(ts["ticket_avail_read"].DataPoints, dataPoint(float64(stat.WiredTiger.ConcurrentTransactions.Read.Available), t))
+		ts["ticket_avail_write"].DataPoints = append(ts["ticket_avail_write"].DataPoints, dataPoint(float64(stat.WiredTiger.ConcurrentTransactions.Write.Available), t))
+
+		// === Queues (MongoDB 7.0+) ===
+		ts["queues_read_out"].DataPoints = append(ts["queues_read_out"].DataPoints, dataPoint(float64(stat.Queues.Execution.Read.Out), t))
+		ts["queues_read_available"].DataPoints = append(ts["queues_read_available"].DataPoints, dataPoint(float64(stat.Queues.Execution.Read.Available), t))
+		ts["queues_read_total"].DataPoints = append(ts["queues_read_total"].DataPoints, dataPoint(float64(stat.Queues.Execution.Read.TotalTickets), t))
+		ts["queues_write_out"].DataPoints = append(ts["queues_write_out"].DataPoints, dataPoint(float64(stat.Queues.Execution.Write.Out), t))
+		ts["queues_write_available"].DataPoints = append(ts["queues_write_available"].DataPoints, dataPoint(float64(stat.Queues.Execution.Write.Available), t))
+		ts["queues_write_total"].DataPoints = append(ts["queues_write_total"].DataPoints, dataPoint(float64(stat.Queues.Execution.Write.TotalTickets), t))
+
+		// === Transactions (gauges) ===
+		ts["txn_active"].DataPoints = append(ts["txn_active"].DataPoints, dataPoint(float64(stat.Transactions.CurrentActive), t))
+		ts["txn_inactive"].DataPoints = append(ts["txn_inactive"].DataPoints, dataPoint(float64(stat.Transactions.CurrentInactive), t))
+		ts["txn_open"].DataPoints = append(ts["txn_open"].DataPoints, dataPoint(float64(stat.Transactions.CurrentOpen), t))
+
+		// === tcmalloc (gauges) ===
+		ts["tcmalloc_in_use"].DataPoints = append(ts["tcmalloc_in_use"].DataPoints, dataPoint(float64(stat.Tcmalloc.Generic.BytesInUseByApp)/gb, t))
+		ts["tcmalloc_allocated"].DataPoints = append(ts["tcmalloc_allocated"].DataPoints, dataPoint(float64(stat.Tcmalloc.Generic.CurrentAllocatedBytes)/gb, t))
+		ts["tcmalloc_heap"].DataPoints = append(ts["tcmalloc_heap"].DataPoints, dataPoint(float64(stat.Tcmalloc.Generic.HeapSize)/gb, t))
+		ts["tcmalloc_physical"].DataPoints = append(ts["tcmalloc_physical"].DataPoints, dataPoint(float64(stat.Tcmalloc.Generic.PhysicalMemoryUsed)/gb, t))
+
+		// === Flow Control (gauge) ===
+		ts["flowctl_rate_limit"].DataPoints = append(ts["flowctl_rate_limit"].DataPoints, dataPoint(float64(stat.FlowControl.TargetRateLimit), t))
+
+		// === Delta-based metrics (need previous stat) ===
 		if i > 0 {
-			t := float64(stat.Start.UnixNano() / (1000 * 1000))
-			for k, disk := range stat.Disks {
-				u := 100 * float64(disk.IOTimeMS-pstat.Disks[k].IOTimeMS) / 1000 // / 1000 ms * 100 %
-				iops := float64(disk.Reads+disk.Writes-(pstat.Disks[k].Reads+pstat.Disks[k].Writes)) / float64(stat.Start.Sub(pstat.Start).Seconds())
-				qlen := float64(disk.IOInProgress)
-				readTimeMS := float64(disk.ReadTimeMS - pstat.Disks[k].ReadTimeMS)
-				writeTimeMS := float64(disk.WriteTimeMS - pstat.Disks[k].WriteTimeMS)
-				ioQueuedMS := float64(disk.IOQueuedMS - pstat.Disks[k].IOQueuedMS)
-				x := diskStats[k]
-				x.Utilization.DataPoints = append(x.Utilization.DataPoints, getDataPoint(u, t))
-				x.IOPS.DataPoints = append(x.IOPS.DataPoints, getDataPoint(iops, t))
-				x.IOInProgress.DataPoints = append(x.IOInProgress.DataPoints, getDataPoint(qlen, t))
-				x.ReadTimeMS.DataPoints = append(x.ReadTimeMS.DataPoints, getDataPoint(readTimeMS, t))
-				x.WriteTimeMS.DataPoints = append(x.WriteTimeMS.DataPoints, getDataPoint(writeTimeMS, t))
-				x.IOQueuedMS.DataPoints = append(x.IOQueuedMS.DataPoints, getDataPoint(ioQueuedMS, t))
-				diskStats[k] = x
+			seconds := math.Round(stat.LocalTime.Sub(pstat.LocalTime).Seconds())
+			if seconds < 1 {
+				seconds = 1
 			}
 
-			stat.CPU.TotalMS = stat.CPU.IOWaitMS + stat.CPU.IdleMS + stat.CPU.NiceMS + stat.CPU.SoftirqMS + stat.CPU.StealMS + stat.CPU.SystemMS + stat.CPU.UserMS
+			// Server Status deltas
+			ts["mem_page_faults"].DataPoints = append(ts["mem_page_faults"].DataPoints, dataPoint(float64(stat.ExtraInfo.PageFaults-pstat.ExtraInfo.PageFaults)/seconds, t))
+			ts["conns_created/s"].DataPoints = append(ts["conns_created/s"].DataPoints, dataPoint(float64(stat.Connections.TotalCreated-pstat.Connections.TotalCreated)/seconds, t))
+			ts["net_in"].DataPoints = append(ts["net_in"].DataPoints, dataPoint(float64(stat.Network.BytesIn-pstat.Network.BytesIn)/mb/seconds, t))
+			ts["net_out"].DataPoints = append(ts["net_out"].DataPoints, dataPoint(float64(stat.Network.BytesOut-pstat.Network.BytesOut)/mb/seconds, t))
+			ts["net_requests"].DataPoints = append(ts["net_requests"].DataPoints, dataPoint(float64(stat.Network.NumRequests-pstat.Network.NumRequests)/seconds, t))
+			ts["net_physical_in"].DataPoints = append(ts["net_physical_in"].DataPoints, dataPoint(float64(stat.Network.PhysicalBytesIn-pstat.Network.PhysicalBytesIn)/mb/seconds, t))
+			ts["net_physical_out"].DataPoints = append(ts["net_physical_out"].DataPoints, dataPoint(float64(stat.Network.PhysicalBytesOut-pstat.Network.PhysicalBytesOut)/mb/seconds, t))
+			ts["ops_query"].DataPoints = append(ts["ops_query"].DataPoints, dataPoint(float64(stat.OpCounters.Query-pstat.OpCounters.Query)/seconds, t))
+			ts["ops_insert"].DataPoints = append(ts["ops_insert"].DataPoints, dataPoint(float64(stat.OpCounters.Insert-pstat.OpCounters.Insert)/seconds, t))
+			ts["ops_update"].DataPoints = append(ts["ops_update"].DataPoints, dataPoint(float64(stat.OpCounters.Update-pstat.OpCounters.Update)/seconds, t))
+			ts["ops_delete"].DataPoints = append(ts["ops_delete"].DataPoints, dataPoint(float64(stat.OpCounters.Delete-pstat.OpCounters.Delete)/seconds, t))
+			ts["ops_getmore"].DataPoints = append(ts["ops_getmore"].DataPoints, dataPoint(float64(stat.OpCounters.Getmore-pstat.OpCounters.Getmore)/seconds, t))
+			ts["ops_command"].DataPoints = append(ts["ops_command"].DataPoints, dataPoint(float64(stat.OpCounters.Command-pstat.OpCounters.Command)/seconds, t))
+			ts["scan_keys"].DataPoints = append(ts["scan_keys"].DataPoints, dataPoint(float64(stat.Metrics.QueryExecutor.Scanned-pstat.Metrics.QueryExecutor.Scanned)/seconds, t))
+			ts["scan_objects"].DataPoints = append(ts["scan_objects"].DataPoints, dataPoint(float64(stat.Metrics.QueryExecutor.ScannedObjects-pstat.Metrics.QueryExecutor.ScannedObjects)/seconds, t))
+			ts["scan_sort"].DataPoints = append(ts["scan_sort"].DataPoints, dataPoint(float64(stat.Metrics.Operation.ScanAndOrder-pstat.Metrics.Operation.ScanAndOrder)/seconds, t))
 
-			x := timeSeriesData["cpu_idle"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(100*float64(stat.CPU.IdleMS-pstat.CPU.IdleMS)/float64(stat.CPU.TotalMS-pstat.CPU.TotalMS), t))
-			timeSeriesData["cpu_idle"] = x
+			// WiredTiger deltas
+			ts["wt_blkmgr_read"].DataPoints = append(ts["wt_blkmgr_read"].DataPoints, dataPoint(float64(stat.WiredTiger.BlockManager.BytesRead-pstat.WiredTiger.BlockManager.BytesRead)/mb/seconds, t))
+			ts["wt_blkmgr_written"].DataPoints = append(ts["wt_blkmgr_written"].DataPoints, dataPoint(float64(stat.WiredTiger.BlockManager.BytesWritten-pstat.WiredTiger.BlockManager.BytesWritten)/mb/seconds, t))
+			ts["wt_blkmgr_written_checkpoint"].DataPoints = append(ts["wt_blkmgr_written_checkpoint"].DataPoints, dataPoint(float64(stat.WiredTiger.BlockManager.BytesWrittenCheckPoint-pstat.WiredTiger.BlockManager.BytesWrittenCheckPoint)/mb/seconds, t))
+			ts["wt_modified_evicted"].DataPoints = append(ts["wt_modified_evicted"].DataPoints, dataPoint(float64(stat.WiredTiger.Cache.ModifiedPagesEvicted-pstat.WiredTiger.Cache.ModifiedPagesEvicted)/seconds, t))
+			ts["wt_unmodified_evicted"].DataPoints = append(ts["wt_unmodified_evicted"].DataPoints, dataPoint(float64(stat.WiredTiger.Cache.UnmodifiedPagesEvicted-pstat.WiredTiger.Cache.UnmodifiedPagesEvicted)/seconds, t))
+			ts["wt_cache_read_in"].DataPoints = append(ts["wt_cache_read_in"].DataPoints, dataPoint(float64(stat.WiredTiger.Cache.BytesReadIntoCache-pstat.WiredTiger.Cache.BytesReadIntoCache)/mb/seconds, t))
+			ts["wt_cache_written_from"].DataPoints = append(ts["wt_cache_written_from"].DataPoints, dataPoint(float64(stat.WiredTiger.Cache.BytesWrittenFromCache-pstat.WiredTiger.Cache.BytesWrittenFromCache)/mb/seconds, t))
 
-			x = timeSeriesData["cpu_iowait"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(100*float64(stat.CPU.IOWaitMS-pstat.CPU.IOWaitMS)/float64(stat.CPU.TotalMS-pstat.CPU.TotalMS), t))
-			timeSeriesData["cpu_iowait"] = x
+			// Transactions deltas
+			ts["txn_aborted/s"].DataPoints = append(ts["txn_aborted/s"].DataPoints, dataPoint(float64(stat.Transactions.TotalAborted-pstat.Transactions.TotalAborted)/seconds, t))
+			ts["txn_committed/s"].DataPoints = append(ts["txn_committed/s"].DataPoints, dataPoint(float64(stat.Transactions.TotalCommitted-pstat.Transactions.TotalCommitted)/seconds, t))
+			ts["txn_started/s"].DataPoints = append(ts["txn_started/s"].DataPoints, dataPoint(float64(stat.Transactions.TotalStarted-pstat.Transactions.TotalStarted)/seconds, t))
 
-			x = timeSeriesData["cpu_system"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(100*float64(stat.CPU.SystemMS-pstat.CPU.SystemMS)/float64(stat.CPU.TotalMS-pstat.CPU.TotalMS), t))
-			timeSeriesData["cpu_system"] = x
-
-			x = timeSeriesData["cpu_user"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(100*float64(stat.CPU.UserMS-pstat.CPU.UserMS)/float64(stat.CPU.TotalMS-pstat.CPU.TotalMS), t))
-			timeSeriesData["cpu_user"] = x
-
-			x = timeSeriesData["cpu_nice"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(100*float64(stat.CPU.NiceMS-pstat.CPU.NiceMS)/float64(stat.CPU.TotalMS-pstat.CPU.TotalMS), t))
-			timeSeriesData["cpu_nice"] = x
-
-			x = timeSeriesData["cpu_steal"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(100*float64(stat.CPU.StealMS-pstat.CPU.StealMS)/float64(stat.CPU.TotalMS-pstat.CPU.TotalMS), t))
-			timeSeriesData["cpu_steal"] = x
-
-			x = timeSeriesData["cpu_softirq"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(100*float64(stat.CPU.SoftirqMS-pstat.CPU.SoftirqMS)/float64(stat.CPU.TotalMS-pstat.CPU.TotalMS), t))
-			timeSeriesData["cpu_softirq"] = x
+			// Flow Control deltas
+			ts["flowctl_acquiring_us"].DataPoints = append(ts["flowctl_acquiring_us"].DataPoints, dataPoint(float64(stat.FlowControl.TimeAcquiringMicros-pstat.FlowControl.TimeAcquiringMicros)/seconds, t))
+			ts["flowctl_lagged_count"].DataPoints = append(ts["flowctl_lagged_count"].DataPoints, dataPoint(float64(stat.FlowControl.IsLaggedCount-pstat.FlowControl.IsLaggedCount)/seconds, t))
 		}
 
 		pstat = stat
 	}
-	return timeSeriesData, diskStats
+
+	return toValueMap(ts)
 }
 
+// Legacy functions for backward compatibility - now just wrappers
 func getServerStatusTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]TimeSeriesDoc {
-	var timeSeriesData = map[string]TimeSeriesDoc{}
-	pstat := ServerStatusDoc{}
-	var x TimeSeriesDoc
-
+	all := getAllServerStatusTimeSeriesDoc(serverStatusList)
+	result := make(map[string]TimeSeriesDoc, len(serverStatusChartsLegends))
 	for _, legend := range serverStatusChartsLegends {
-		timeSeriesData[legend] = TimeSeriesDoc{legend, [][]float64{}}
+		if v, ok := all[legend]; ok {
+			result[legend] = v
+		}
 	}
-	for i, stat := range serverStatusList {
-		if stat.Uptime > pstat.Uptime {
-			t := float64(stat.LocalTime.UnixNano() / (1000 * 1000))
-
-			x = timeSeriesData["mem_resident"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Mem.Resident)/1024, t))
-			timeSeriesData["mem_resident"] = x
-
-			x = timeSeriesData["mem_virtual"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Mem.Virtual)/1024, t))
-			timeSeriesData["mem_virtual"] = x
-
-			x = timeSeriesData["conns_active"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Connections.Active), t))
-			timeSeriesData["conns_active"] = x
-
-			x = timeSeriesData["conns_available"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Connections.Available), t))
-			timeSeriesData["conns_available"] = x
-
-			x = timeSeriesData["conns_current"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Connections.Current), t))
-			timeSeriesData["conns_current"] = x
-
-			x = timeSeriesData["q_active_read"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.GlobalLock.ActiveClients.Readers), t))
-			timeSeriesData["q_active_read"] = x
-
-			r := 0.0
-			if stat.OpLatencies.Reads.Ops > 0 {
-				r = float64(stat.OpLatencies.Reads.Latency) / float64(stat.OpLatencies.Reads.Ops) / 1000
-			}
-			x = timeSeriesData["latency_read"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(r, t))
-			timeSeriesData["latency_read"] = x
-
-			w := 0.0
-			if stat.OpLatencies.Writes.Ops > 0 {
-				w = float64(stat.OpLatencies.Writes.Latency) / float64(stat.OpLatencies.Writes.Ops) / 1000
-			}
-			x = timeSeriesData["latency_write"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(w, t))
-			timeSeriesData["latency_write"] = x
-
-			c := 0.0
-			if stat.OpLatencies.Commands.Ops > 0 {
-				c = float64(stat.OpLatencies.Commands.Latency) / float64(stat.OpLatencies.Commands.Ops) / 1000
-			}
-			x = timeSeriesData["latency_command"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(c, t))
-			timeSeriesData["latency_command"] = x
-
-			x = timeSeriesData["q_active_write"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.GlobalLock.ActiveClients.Writers), t))
-			timeSeriesData["q_active_write"] = x
-
-			x = timeSeriesData["q_queued_read"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.GlobalLock.CurrentQueue.Readers), t))
-			timeSeriesData["q_queued_read"] = x
-
-			x = timeSeriesData["q_queued_write"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.GlobalLock.CurrentQueue.Writers), t))
-			timeSeriesData["q_queued_write"] = x
-
-			if i > 0 {
-				seconds := math.Round(stat.LocalTime.Sub(pstat.LocalTime).Seconds())
-				if seconds < 1 {
-					seconds = 1
-				}
-
-				x = timeSeriesData["mem_page_faults"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.ExtraInfo.PageFaults-pstat.ExtraInfo.PageFaults)/seconds, t))
-				timeSeriesData["mem_page_faults"] = x
-
-				x = timeSeriesData["conns_created/s"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Connections.TotalCreated-pstat.Connections.TotalCreated)/seconds, t))
-				timeSeriesData["conns_created/s"] = x
-
-				x = timeSeriesData["net_in"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Network.BytesIn-pstat.Network.BytesIn)/mb/seconds, t))
-				timeSeriesData["net_in"] = x
-
-				x = timeSeriesData["net_out"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Network.BytesOut-pstat.Network.BytesOut)/mb/seconds, t))
-				timeSeriesData["net_out"] = x
-
-				x = timeSeriesData["net_requests"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Network.NumRequests-pstat.Network.NumRequests)/seconds, t))
-				timeSeriesData["net_requests"] = x
-
-				x = timeSeriesData["net_physical_in"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Network.PhysicalBytesIn-pstat.Network.PhysicalBytesIn)/mb/seconds, t))
-				timeSeriesData["net_physicalsical_in"] = x
-
-				x = timeSeriesData["net_physical_out"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Network.PhysicalBytesOut-pstat.Network.PhysicalBytesOut)/mb/seconds, t))
-				timeSeriesData["net_physical_out"] = x
-
-				x = timeSeriesData["ops_query"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCounters.Query-pstat.OpCounters.Query)/seconds, t))
-				timeSeriesData["ops_query"] = x
-
-				x = timeSeriesData["ops_insert"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCounters.Insert-pstat.OpCounters.Insert)/seconds, t))
-				timeSeriesData["ops_insert"] = x
-
-				x = timeSeriesData["ops_update"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCounters.Update-pstat.OpCounters.Update)/seconds, t))
-				timeSeriesData["ops_update"] = x
-
-				x = timeSeriesData["ops_delete"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCounters.Delete-pstat.OpCounters.Delete)/seconds, t))
-				timeSeriesData["ops_delete"] = x
-
-				x = timeSeriesData["ops_getmore"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCounters.Getmore-pstat.OpCounters.Getmore)/seconds, t))
-				timeSeriesData["ops_getmore"] = x
-
-				x = timeSeriesData["ops_command"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.OpCounters.Command-pstat.OpCounters.Command)/seconds, t))
-				timeSeriesData["ops_command"] = x
-
-				x = timeSeriesData["scan_keys"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.QueryExecutor.Scanned-pstat.Metrics.QueryExecutor.Scanned)/seconds, t))
-				timeSeriesData["scan_keys"] = x
-
-				x = timeSeriesData["scan_objects"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.QueryExecutor.ScannedObjects-pstat.Metrics.QueryExecutor.ScannedObjects)/seconds, t))
-				timeSeriesData["scan_objects"] = x
-
-				x = timeSeriesData["scan_sort"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Metrics.Operation.ScanAndOrder-pstat.Metrics.Operation.ScanAndOrder)/seconds, t))
-				timeSeriesData["scan_sort"] = x
-			} // if i > 0
-		} // if stat.Uptime > pstat.Uptime
-
-		pstat = stat
-	}
-	return timeSeriesData
+	return result
 }
 
 func getWiredTigerTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]TimeSeriesDoc {
-	var timeSeriesData = map[string]TimeSeriesDoc{}
-	pstat := ServerStatusDoc{}
-	var x TimeSeriesDoc
-
+	all := getAllServerStatusTimeSeriesDoc(serverStatusList)
+	result := make(map[string]TimeSeriesDoc, len(wiredTigerChartsLegends))
 	for _, legend := range wiredTigerChartsLegends {
-		timeSeriesData[legend] = TimeSeriesDoc{legend, [][]float64{}}
+		if v, ok := all[legend]; ok {
+			result[legend] = v
+		}
 	}
-	for i, stat := range serverStatusList {
-		if stat.Uptime > pstat.Uptime {
-			t := float64(stat.LocalTime.UnixNano() / (1000 * 1000))
-
-			x = timeSeriesData["wt_cache_max"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.Cache.MaxBytesConfigured)/(1024*1024*1024), t))
-			timeSeriesData["wt_cache_max"] = x
-
-			x = timeSeriesData["wt_cache_used"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.Cache.CurrentlyInCache)/(1024*1024*1024), t))
-			timeSeriesData["wt_cache_used"] = x
-
-			x = timeSeriesData["wt_cache_dirty"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.Cache.TrackedDirtyBytes)/(1024*1024*1024), t))
-			timeSeriesData["wt_cache_dirty"] = x
-
-			x = timeSeriesData["wt_dhandles_active"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.DataHandle.Active), t))
-			timeSeriesData["wt_dhandles_active"] = x
-
-			x = timeSeriesData["ticket_avail_read"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.ConcurrentTransactions.Read.Available), t))
-			timeSeriesData["ticket_avail_read"] = x
-
-			x = timeSeriesData["ticket_avail_write"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.ConcurrentTransactions.Write.Available), t))
-			timeSeriesData["ticket_avail_write"] = x
-
-			if i > 0 {
-				seconds := math.Round(stat.LocalTime.Sub(pstat.LocalTime).Seconds())
-				if seconds < 1 {
-					seconds = 1
-				}
-				x = timeSeriesData["wt_blkmgr_read"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.BlockManager.BytesRead-pstat.WiredTiger.BlockManager.BytesRead)/mb/seconds, t))
-				timeSeriesData["wt_blkmgr_read"] = x
-
-				x = timeSeriesData["wt_blkmgr_written"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.BlockManager.BytesWritten-pstat.WiredTiger.BlockManager.BytesWritten)/mb/seconds, t))
-				timeSeriesData["wt_blkmgr_written"] = x
-
-				x = timeSeriesData["wt_blkmgr_written_checkpoint"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.BlockManager.BytesWrittenCheckPoint-pstat.WiredTiger.BlockManager.BytesWrittenCheckPoint)/mb/seconds, t))
-				timeSeriesData["wt_blkmgr_written_checkpoint"] = x
-
-				x = timeSeriesData["wt_modified_evicted"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.Cache.ModifiedPagesEvicted-pstat.WiredTiger.Cache.ModifiedPagesEvicted)/seconds, t))
-				timeSeriesData["wt_modified_evicted"] = x
-
-				x = timeSeriesData["wt_unmodified_evicted"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.Cache.UnmodifiedPagesEvicted-pstat.WiredTiger.Cache.UnmodifiedPagesEvicted)/seconds, t))
-				timeSeriesData["wt_unmodified_evicted"] = x
-
-				x = timeSeriesData["wt_cache_read_in"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.Cache.BytesReadIntoCache-pstat.WiredTiger.Cache.BytesReadIntoCache)/mb/seconds, t))
-				timeSeriesData["wt_cache_read_in"] = x
-
-				x = timeSeriesData["wt_cache_written_from"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.WiredTiger.Cache.BytesWrittenFromCache-pstat.WiredTiger.Cache.BytesWrittenFromCache)/mb/seconds, t))
-				timeSeriesData["wt_cache_written_from"] = x
-			} // if i > 0
-		} // if stat.Uptime > pstat.Uptime
-
-		pstat = stat
-	}
-	return timeSeriesData
+	return result
 }
 
-// getQueuesTimeSeriesDoc returns time series data for MongoDB 7.0+ Queues (Admission Control)
 func getQueuesTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]TimeSeriesDoc {
-	var timeSeriesData = map[string]TimeSeriesDoc{}
-	pstat := ServerStatusDoc{}
-	var x TimeSeriesDoc
-
+	all := getAllServerStatusTimeSeriesDoc(serverStatusList)
+	result := make(map[string]TimeSeriesDoc, len(queuesChartsLegends))
 	for _, legend := range queuesChartsLegends {
-		timeSeriesData[legend] = TimeSeriesDoc{legend, [][]float64{}}
-	}
-	for _, stat := range serverStatusList {
-		if stat.Uptime > pstat.Uptime {
-			t := float64(stat.LocalTime.UnixNano() / (1000 * 1000))
-
-			x = timeSeriesData["queues_read_out"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Queues.Execution.Read.Out), t))
-			timeSeriesData["queues_read_out"] = x
-
-			x = timeSeriesData["queues_read_available"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Queues.Execution.Read.Available), t))
-			timeSeriesData["queues_read_available"] = x
-
-			x = timeSeriesData["queues_read_total"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Queues.Execution.Read.TotalTickets), t))
-			timeSeriesData["queues_read_total"] = x
-
-			x = timeSeriesData["queues_write_out"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Queues.Execution.Write.Out), t))
-			timeSeriesData["queues_write_out"] = x
-
-			x = timeSeriesData["queues_write_available"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Queues.Execution.Write.Available), t))
-			timeSeriesData["queues_write_available"] = x
-
-			x = timeSeriesData["queues_write_total"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Queues.Execution.Write.TotalTickets), t))
-			timeSeriesData["queues_write_total"] = x
+		if v, ok := all[legend]; ok {
+			result[legend] = v
 		}
-		pstat = stat
 	}
-	return timeSeriesData
+	return result
 }
 
-// getTransactionsTimeSeriesDoc returns time series data for transactions
 func getTransactionsTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]TimeSeriesDoc {
-	var timeSeriesData = map[string]TimeSeriesDoc{}
-	pstat := ServerStatusDoc{}
-	var x TimeSeriesDoc
-
+	all := getAllServerStatusTimeSeriesDoc(serverStatusList)
+	result := make(map[string]TimeSeriesDoc, len(transactionsChartsLegends))
 	for _, legend := range transactionsChartsLegends {
-		timeSeriesData[legend] = TimeSeriesDoc{legend, [][]float64{}}
-	}
-	for i, stat := range serverStatusList {
-		if stat.Uptime > pstat.Uptime {
-			t := float64(stat.LocalTime.UnixNano() / (1000 * 1000))
-
-			x = timeSeriesData["txn_active"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Transactions.CurrentActive), t))
-			timeSeriesData["txn_active"] = x
-
-			x = timeSeriesData["txn_inactive"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Transactions.CurrentInactive), t))
-			timeSeriesData["txn_inactive"] = x
-
-			x = timeSeriesData["txn_open"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Transactions.CurrentOpen), t))
-			timeSeriesData["txn_open"] = x
-
-			if i > 0 {
-				seconds := math.Round(stat.LocalTime.Sub(pstat.LocalTime).Seconds())
-				if seconds < 1 {
-					seconds = 1
-				}
-
-				x = timeSeriesData["txn_aborted/s"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Transactions.TotalAborted-pstat.Transactions.TotalAborted)/seconds, t))
-				timeSeriesData["txn_aborted/s"] = x
-
-				x = timeSeriesData["txn_committed/s"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Transactions.TotalCommitted-pstat.Transactions.TotalCommitted)/seconds, t))
-				timeSeriesData["txn_committed/s"] = x
-
-				x = timeSeriesData["txn_started/s"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Transactions.TotalStarted-pstat.Transactions.TotalStarted)/seconds, t))
-				timeSeriesData["txn_started/s"] = x
-			}
+		if v, ok := all[legend]; ok {
+			result[legend] = v
 		}
-		pstat = stat
 	}
-	return timeSeriesData
+	return result
 }
 
-// getTcmallocTimeSeriesDoc returns time series data for tcmalloc memory
 func getTcmallocTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]TimeSeriesDoc {
-	var timeSeriesData = map[string]TimeSeriesDoc{}
-	pstat := ServerStatusDoc{}
-	var x TimeSeriesDoc
-
+	all := getAllServerStatusTimeSeriesDoc(serverStatusList)
+	result := make(map[string]TimeSeriesDoc, len(tcmallocChartsLegends))
 	for _, legend := range tcmallocChartsLegends {
-		timeSeriesData[legend] = TimeSeriesDoc{legend, [][]float64{}}
-	}
-	for _, stat := range serverStatusList {
-		if stat.Uptime > pstat.Uptime {
-			t := float64(stat.LocalTime.UnixNano() / (1000 * 1000))
-
-			x = timeSeriesData["tcmalloc_in_use"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Tcmalloc.Generic.BytesInUseByApp)/(1024*1024*1024), t))
-			timeSeriesData["tcmalloc_in_use"] = x
-
-			x = timeSeriesData["tcmalloc_allocated"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Tcmalloc.Generic.CurrentAllocatedBytes)/(1024*1024*1024), t))
-			timeSeriesData["tcmalloc_allocated"] = x
-
-			x = timeSeriesData["tcmalloc_heap"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Tcmalloc.Generic.HeapSize)/(1024*1024*1024), t))
-			timeSeriesData["tcmalloc_heap"] = x
-
-			x = timeSeriesData["tcmalloc_physical"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Tcmalloc.Generic.PhysicalMemoryUsed)/(1024*1024*1024), t))
-			timeSeriesData["tcmalloc_physical"] = x
+		if v, ok := all[legend]; ok {
+			result[legend] = v
 		}
-		pstat = stat
 	}
-	return timeSeriesData
+	return result
 }
 
-// getFlowControlTimeSeriesDoc returns time series data for flow control
 func getFlowControlTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]TimeSeriesDoc {
-	var timeSeriesData = map[string]TimeSeriesDoc{}
-	pstat := ServerStatusDoc{}
-	var x TimeSeriesDoc
-
+	all := getAllServerStatusTimeSeriesDoc(serverStatusList)
+	result := make(map[string]TimeSeriesDoc, len(flowControlChartsLegends))
 	for _, legend := range flowControlChartsLegends {
-		timeSeriesData[legend] = TimeSeriesDoc{legend, [][]float64{}}
-	}
-	for i, stat := range serverStatusList {
-		if stat.Uptime > pstat.Uptime {
-			t := float64(stat.LocalTime.UnixNano() / (1000 * 1000))
-
-			x = timeSeriesData["flowctl_rate_limit"]
-			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.FlowControl.TargetRateLimit), t))
-			timeSeriesData["flowctl_rate_limit"] = x
-
-			if i > 0 {
-				seconds := math.Round(stat.LocalTime.Sub(pstat.LocalTime).Seconds())
-				if seconds < 1 {
-					seconds = 1
-				}
-
-				x = timeSeriesData["flowctl_acquiring_us"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.FlowControl.TimeAcquiringMicros-pstat.FlowControl.TimeAcquiringMicros)/seconds, t))
-				timeSeriesData["flowctl_acquiring_us"] = x
-
-				x = timeSeriesData["flowctl_lagged_count"]
-				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.FlowControl.IsLaggedCount-pstat.FlowControl.IsLaggedCount)/seconds, t))
-				timeSeriesData["flowctl_lagged_count"] = x
-			}
+		if v, ok := all[legend]; ok {
+			result[legend] = v
 		}
-		pstat = stat
 	}
-	return timeSeriesData
+	return result
+}
+
+// Deprecated: use dataPoint instead
+func getDataPoint(v float64, t float64) []float64 {
+	return dataPoint(v, t)
 }
