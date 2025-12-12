@@ -147,22 +147,76 @@ type ConnectionsDoc struct {
 	Active       uint64 `json:"active" bson:"active"`
 }
 
+// QueueTicketsDoc contains ticket info for queues
+type QueueTicketsDoc struct {
+	Out          uint64 `json:"out" bson:"out"`
+	Available    uint64 `json:"available" bson:"available"`
+	TotalTickets uint64 `json:"totalTickets" bson:"totalTickets"`
+}
+
+// ExecutionQueuesDoc contains db.serverStatus().queues.execution
+type ExecutionQueuesDoc struct {
+	Read  QueueTicketsDoc `json:"read" bson:"read"`
+	Write QueueTicketsDoc `json:"write" bson:"write"`
+}
+
+// QueuesDoc contains db.serverStatus().queues (MongoDB 7.0+)
+type QueuesDoc struct {
+	Execution ExecutionQueuesDoc `json:"execution" bson:"execution"`
+}
+
+// TransactionsDoc contains db.serverStatus().transactions
+type TransactionsDoc struct {
+	CurrentActive   uint64 `json:"currentActive" bson:"currentActive"`
+	CurrentInactive uint64 `json:"currentInactive" bson:"currentInactive"`
+	CurrentOpen     uint64 `json:"currentOpen" bson:"currentOpen"`
+	TotalAborted    uint64 `json:"totalAborted" bson:"totalAborted"`
+	TotalCommitted  uint64 `json:"totalCommitted" bson:"totalCommitted"`
+	TotalStarted    uint64 `json:"totalStarted" bson:"totalStarted"`
+}
+
+// TcmallocGenericDoc contains db.serverStatus().tcmalloc.generic
+type TcmallocGenericDoc struct {
+	BytesInUseByApp       uint64 `json:"bytes_in_use_by_app" bson:"bytes_in_use_by_app"`
+	CurrentAllocatedBytes uint64 `json:"current_allocated_bytes" bson:"current_allocated_bytes"`
+	HeapSize              uint64 `json:"heap_size" bson:"heap_size"`
+	PhysicalMemoryUsed    uint64 `json:"physical_memory_used" bson:"physical_memory_used"`
+}
+
+// TcmallocDoc contains db.serverStatus().tcmalloc
+type TcmallocDoc struct {
+	Generic TcmallocGenericDoc `json:"generic" bson:"generic"`
+}
+
+// FlowControlDoc contains db.serverStatus().flowControl
+type FlowControlDoc struct {
+	Enabled             bool   `json:"enabled" bson:"enabled"`
+	TargetRateLimit     uint64 `json:"targetRateLimit" bson:"targetRateLimit"`
+	TimeAcquiringMicros uint64 `json:"timeAcquiringMicros" bson:"timeAcquiringMicros"`
+	IsLagged            bool   `json:"isLagged" bson:"isLagged"`
+	IsLaggedCount       uint64 `json:"isLaggedCount" bson:"isLaggedCount"`
+}
+
 // ServerStatusDoc contains docs from db.serverStatus()
 type ServerStatusDoc struct {
-	Connections ConnectionsDoc `json:"connections" bson:"connections"`
-	ExtraInfo   ExtraInfoDoc   `json:"extra_info" bson:"extra_info"`
-	GlobalLock  GlobalLockDoc  `json:"globalLock" bson:"globalLock"`
-	Host        string         `json:"host" bson:"host"`
-	LocalTime   time.Time      `json:"localTime" bson:"localTime"`
-	Mem         MemDoc         `json:"mem" bson:"mem"`
-	Metrics     MetricsDoc     `json:"metrics" bson:"metrics"`
-	Network     NetworkDoc     `json:"network" bson:"network"`
-	OpCounters  OpCountersDoc  `json:"opcounters" bson:"opcounters"`
-	OpLatencies OpLatenciesDoc `json:"opLatencies" bson:"opLatencies"`
-	Process     string         `json:"process" bson:"process"`
-	Repl        bson.M         `json:"repl" bson:"repl"`
-	Sharding    bson.M         `json:"sharding" bson:"sharding"`
-	Uptime      uint64         `json:"uptime" bson:"uptime"`
-	Version     string         `json:"version" bson:"version"`
-	WiredTiger  WiredTigerDoc  `json:"wiredTiger" bson:"wiredTiger"`
+	Connections  ConnectionsDoc  `json:"connections" bson:"connections"`
+	ExtraInfo    ExtraInfoDoc    `json:"extra_info" bson:"extra_info"`
+	FlowControl  FlowControlDoc  `json:"flowControl" bson:"flowControl"`
+	GlobalLock   GlobalLockDoc   `json:"globalLock" bson:"globalLock"`
+	Host         string          `json:"host" bson:"host"`
+	LocalTime    time.Time       `json:"localTime" bson:"localTime"`
+	Mem          MemDoc          `json:"mem" bson:"mem"`
+	Metrics      MetricsDoc      `json:"metrics" bson:"metrics"`
+	Network      NetworkDoc      `json:"network" bson:"network"`
+	OpCounters   OpCountersDoc   `json:"opcounters" bson:"opcounters"`
+	OpLatencies  OpLatenciesDoc  `json:"opLatencies" bson:"opLatencies"`
+	Process      string          `json:"process" bson:"process"`
+	Queues       QueuesDoc       `json:"queues" bson:"queues"`
+	Repl         bson.M          `json:"repl" bson:"repl"`
+	Sharding     bson.M          `json:"sharding" bson:"sharding"`
+	Tcmalloc     TcmallocDoc     `json:"tcmalloc" bson:"tcmalloc"`
+	Transactions TransactionsDoc `json:"transactions" bson:"transactions"`
+	Uptime       uint64          `json:"uptime" bson:"uptime"`
+	Version      string          `json:"version" bson:"version"`
+	WiredTiger   WiredTigerDoc   `json:"wiredTiger" bson:"wiredTiger"`
 }

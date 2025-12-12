@@ -56,6 +56,28 @@ var wiredTigerChartsLegends = []string{
 	"wt_modified_evicted", "wt_unmodified_evicted", "wt_cache_read_in", "wt_cache_written_from",
 	"wt_dhandles_active", "ticket_avail_read", "ticket_avail_write",
 }
+
+// MongoDB 7.0+ Queues (Admission Control)
+var queuesChartsLegends = []string{
+	"queues_read_out", "queues_read_available", "queues_read_total",
+	"queues_write_out", "queues_write_available", "queues_write_total",
+}
+
+// Transactions
+var transactionsChartsLegends = []string{
+	"txn_active", "txn_inactive", "txn_open",
+	"txn_aborted/s", "txn_committed/s", "txn_started/s",
+}
+
+// tcmalloc Memory
+var tcmallocChartsLegends = []string{
+	"tcmalloc_in_use", "tcmalloc_allocated", "tcmalloc_heap", "tcmalloc_physical",
+}
+
+// Flow Control
+var flowControlChartsLegends = []string{
+	"flowctl_rate_limit", "flowctl_acquiring_us", "flowctl_lagged_count",
+}
 var systemMetricsChartsLegends = []string{
 	"cpu_idle", "cpu_iowait", "cpu_nice", "cpu_softirq", "cpu_steal", "cpu_system", "cpu_user",
 	"disks_utils", "disks_iops", "io_in_progress", "read_time_ms", "write_time_ms", "io_queued_ms"}
@@ -424,6 +446,168 @@ func getWiredTigerTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]T
 			} // if i > 0
 		} // if stat.Uptime > pstat.Uptime
 
+		pstat = stat
+	}
+	return timeSeriesData
+}
+
+// getQueuesTimeSeriesDoc returns time series data for MongoDB 7.0+ Queues (Admission Control)
+func getQueuesTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]TimeSeriesDoc {
+	var timeSeriesData = map[string]TimeSeriesDoc{}
+	pstat := ServerStatusDoc{}
+	var x TimeSeriesDoc
+
+	for _, legend := range queuesChartsLegends {
+		timeSeriesData[legend] = TimeSeriesDoc{legend, [][]float64{}}
+	}
+	for _, stat := range serverStatusList {
+		if stat.Uptime > pstat.Uptime {
+			t := float64(stat.LocalTime.UnixNano() / (1000 * 1000))
+
+			x = timeSeriesData["queues_read_out"]
+			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Queues.Execution.Read.Out), t))
+			timeSeriesData["queues_read_out"] = x
+
+			x = timeSeriesData["queues_read_available"]
+			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Queues.Execution.Read.Available), t))
+			timeSeriesData["queues_read_available"] = x
+
+			x = timeSeriesData["queues_read_total"]
+			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Queues.Execution.Read.TotalTickets), t))
+			timeSeriesData["queues_read_total"] = x
+
+			x = timeSeriesData["queues_write_out"]
+			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Queues.Execution.Write.Out), t))
+			timeSeriesData["queues_write_out"] = x
+
+			x = timeSeriesData["queues_write_available"]
+			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Queues.Execution.Write.Available), t))
+			timeSeriesData["queues_write_available"] = x
+
+			x = timeSeriesData["queues_write_total"]
+			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Queues.Execution.Write.TotalTickets), t))
+			timeSeriesData["queues_write_total"] = x
+		}
+		pstat = stat
+	}
+	return timeSeriesData
+}
+
+// getTransactionsTimeSeriesDoc returns time series data for transactions
+func getTransactionsTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]TimeSeriesDoc {
+	var timeSeriesData = map[string]TimeSeriesDoc{}
+	pstat := ServerStatusDoc{}
+	var x TimeSeriesDoc
+
+	for _, legend := range transactionsChartsLegends {
+		timeSeriesData[legend] = TimeSeriesDoc{legend, [][]float64{}}
+	}
+	for i, stat := range serverStatusList {
+		if stat.Uptime > pstat.Uptime {
+			t := float64(stat.LocalTime.UnixNano() / (1000 * 1000))
+
+			x = timeSeriesData["txn_active"]
+			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Transactions.CurrentActive), t))
+			timeSeriesData["txn_active"] = x
+
+			x = timeSeriesData["txn_inactive"]
+			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Transactions.CurrentInactive), t))
+			timeSeriesData["txn_inactive"] = x
+
+			x = timeSeriesData["txn_open"]
+			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Transactions.CurrentOpen), t))
+			timeSeriesData["txn_open"] = x
+
+			if i > 0 {
+				seconds := math.Round(stat.LocalTime.Sub(pstat.LocalTime).Seconds())
+				if seconds < 1 {
+					seconds = 1
+				}
+
+				x = timeSeriesData["txn_aborted/s"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Transactions.TotalAborted-pstat.Transactions.TotalAborted)/seconds, t))
+				timeSeriesData["txn_aborted/s"] = x
+
+				x = timeSeriesData["txn_committed/s"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Transactions.TotalCommitted-pstat.Transactions.TotalCommitted)/seconds, t))
+				timeSeriesData["txn_committed/s"] = x
+
+				x = timeSeriesData["txn_started/s"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Transactions.TotalStarted-pstat.Transactions.TotalStarted)/seconds, t))
+				timeSeriesData["txn_started/s"] = x
+			}
+		}
+		pstat = stat
+	}
+	return timeSeriesData
+}
+
+// getTcmallocTimeSeriesDoc returns time series data for tcmalloc memory
+func getTcmallocTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]TimeSeriesDoc {
+	var timeSeriesData = map[string]TimeSeriesDoc{}
+	pstat := ServerStatusDoc{}
+	var x TimeSeriesDoc
+
+	for _, legend := range tcmallocChartsLegends {
+		timeSeriesData[legend] = TimeSeriesDoc{legend, [][]float64{}}
+	}
+	for _, stat := range serverStatusList {
+		if stat.Uptime > pstat.Uptime {
+			t := float64(stat.LocalTime.UnixNano() / (1000 * 1000))
+
+			x = timeSeriesData["tcmalloc_in_use"]
+			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Tcmalloc.Generic.BytesInUseByApp)/(1024*1024*1024), t))
+			timeSeriesData["tcmalloc_in_use"] = x
+
+			x = timeSeriesData["tcmalloc_allocated"]
+			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Tcmalloc.Generic.CurrentAllocatedBytes)/(1024*1024*1024), t))
+			timeSeriesData["tcmalloc_allocated"] = x
+
+			x = timeSeriesData["tcmalloc_heap"]
+			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Tcmalloc.Generic.HeapSize)/(1024*1024*1024), t))
+			timeSeriesData["tcmalloc_heap"] = x
+
+			x = timeSeriesData["tcmalloc_physical"]
+			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.Tcmalloc.Generic.PhysicalMemoryUsed)/(1024*1024*1024), t))
+			timeSeriesData["tcmalloc_physical"] = x
+		}
+		pstat = stat
+	}
+	return timeSeriesData
+}
+
+// getFlowControlTimeSeriesDoc returns time series data for flow control
+func getFlowControlTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[string]TimeSeriesDoc {
+	var timeSeriesData = map[string]TimeSeriesDoc{}
+	pstat := ServerStatusDoc{}
+	var x TimeSeriesDoc
+
+	for _, legend := range flowControlChartsLegends {
+		timeSeriesData[legend] = TimeSeriesDoc{legend, [][]float64{}}
+	}
+	for i, stat := range serverStatusList {
+		if stat.Uptime > pstat.Uptime {
+			t := float64(stat.LocalTime.UnixNano() / (1000 * 1000))
+
+			x = timeSeriesData["flowctl_rate_limit"]
+			x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.FlowControl.TargetRateLimit), t))
+			timeSeriesData["flowctl_rate_limit"] = x
+
+			if i > 0 {
+				seconds := math.Round(stat.LocalTime.Sub(pstat.LocalTime).Seconds())
+				if seconds < 1 {
+					seconds = 1
+				}
+
+				x = timeSeriesData["flowctl_acquiring_us"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.FlowControl.TimeAcquiringMicros-pstat.FlowControl.TimeAcquiringMicros)/seconds, t))
+				timeSeriesData["flowctl_acquiring_us"] = x
+
+				x = timeSeriesData["flowctl_lagged_count"]
+				x.DataPoints = append(x.DataPoints, getDataPoint(float64(stat.FlowControl.IsLaggedCount-pstat.FlowControl.IsLaggedCount)/seconds, t))
+				timeSeriesData["flowctl_lagged_count"] = x
+			}
+		}
 		pstat = stat
 	}
 	return timeSeriesData

@@ -339,8 +339,12 @@ func (m *Metrics) AddFTDCDetailStats(diag *DiagnosticData) {
 	var wiredTigerTSD map[string]TimeSeriesDoc
 	var replicationTSD map[string]TimeSeriesDoc
 	var systemMetricsTSD map[string]TimeSeriesDoc
+	var queuesTSD map[string]TimeSeriesDoc
+	var transactionsTSD map[string]TimeSeriesDoc
+	var tcmallocTSD map[string]TimeSeriesDoc
+	var flowControlTSD map[string]TimeSeriesDoc
 
-	var wg = gox.NewWaitGroup(4) // use 4 threads to read
+	var wg = gox.NewWaitGroup(8) // use 8 threads to read
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -359,7 +363,27 @@ func (m *Metrics) AddFTDCDetailStats(diag *DiagnosticData) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		wiredTigerTSD = getWiredTigerTimeSeriesDoc(ftdc.ServerStatusList) // ServerStatus
+		wiredTigerTSD = getWiredTigerTimeSeriesDoc(ftdc.ServerStatusList) // WiredTiger
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		queuesTSD = getQueuesTimeSeriesDoc(ftdc.ServerStatusList) // Queues (MongoDB 7.0+)
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		transactionsTSD = getTransactionsTimeSeriesDoc(ftdc.ServerStatusList) // Transactions
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		tcmallocTSD = getTcmallocTimeSeriesDoc(ftdc.ServerStatusList) // tcmalloc
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		flowControlTSD = getFlowControlTimeSeriesDoc(ftdc.ServerStatusList) // Flow Control
 	}()
 	wg.Wait()
 
@@ -371,6 +395,18 @@ func (m *Metrics) AddFTDCDetailStats(diag *DiagnosticData) {
 		ftdc.TimeSeriesData[k] = v
 	}
 	for k, v := range systemMetricsTSD {
+		ftdc.TimeSeriesData[k] = v
+	}
+	for k, v := range queuesTSD {
+		ftdc.TimeSeriesData[k] = v
+	}
+	for k, v := range transactionsTSD {
+		ftdc.TimeSeriesData[k] = v
+	}
+	for k, v := range tcmallocTSD {
+		ftdc.TimeSeriesData[k] = v
+	}
+	for k, v := range flowControlTSD {
 		ftdc.TimeSeriesData[k] = v
 	}
 	json.Unmarshal(b, &ftdc.ServerInfo)

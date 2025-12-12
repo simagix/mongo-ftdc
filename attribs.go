@@ -71,6 +71,34 @@ func (attr *Attribs) GetServerStatusDataPoints(i int) ServerStatusDoc {
 	ss.WiredTiger.DataHandle.Active = attr.get("serverStatus/wiredTiger/data-handle/connection data handles currently active", i)
 	ss.WiredTiger.ConcurrentTransactions.Read.Available = attr.get("serverStatus/wiredTiger/concurrentTransactions/read/available", i)
 	ss.WiredTiger.ConcurrentTransactions.Write.Available = attr.get("serverStatus/wiredTiger/concurrentTransactions/write/available", i)
+
+	// MongoDB 7.0+ Queues (Admission Control)
+	ss.Queues.Execution.Read.Out = attr.get("serverStatus/queues/execution/read/out", i)
+	ss.Queues.Execution.Read.Available = attr.get("serverStatus/queues/execution/read/available", i)
+	ss.Queues.Execution.Read.TotalTickets = attr.get("serverStatus/queues/execution/read/totalTickets", i)
+	ss.Queues.Execution.Write.Out = attr.get("serverStatus/queues/execution/write/out", i)
+	ss.Queues.Execution.Write.Available = attr.get("serverStatus/queues/execution/write/available", i)
+	ss.Queues.Execution.Write.TotalTickets = attr.get("serverStatus/queues/execution/write/totalTickets", i)
+
+	// Transactions
+	ss.Transactions.CurrentActive = attr.get("serverStatus/transactions/currentActive", i)
+	ss.Transactions.CurrentInactive = attr.get("serverStatus/transactions/currentInactive", i)
+	ss.Transactions.CurrentOpen = attr.get("serverStatus/transactions/currentOpen", i)
+	ss.Transactions.TotalAborted = attr.get("serverStatus/transactions/totalAborted", i)
+	ss.Transactions.TotalCommitted = attr.get("serverStatus/transactions/totalCommitted", i)
+	ss.Transactions.TotalStarted = attr.get("serverStatus/transactions/totalStarted", i)
+
+	// tcmalloc Memory
+	ss.Tcmalloc.Generic.BytesInUseByApp = attr.get("serverStatus/tcmalloc/generic/bytes_in_use_by_app", i)
+	ss.Tcmalloc.Generic.CurrentAllocatedBytes = attr.get("serverStatus/tcmalloc/generic/current_allocated_bytes", i)
+	ss.Tcmalloc.Generic.HeapSize = attr.get("serverStatus/tcmalloc/generic/heap_size", i)
+	ss.Tcmalloc.Generic.PhysicalMemoryUsed = attr.get("serverStatus/tcmalloc/generic/physical_memory_used", i)
+
+	// Flow Control (Replication)
+	ss.FlowControl.TargetRateLimit = attr.get("serverStatus/flowControl/targetRateLimit", i)
+	ss.FlowControl.TimeAcquiringMicros = attr.get("serverStatus/flowControl/timeAcquiringMicros", i)
+	ss.FlowControl.IsLaggedCount = attr.get("serverStatus/flowControl/isLaggedCount", i)
+
 	return ss
 }
 
