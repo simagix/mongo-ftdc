@@ -50,6 +50,10 @@ var serverStatusChartsLegends = []string{
 	"ops_query", "ops_insert", "ops_update", "ops_delete", "ops_getmore", "ops_command",
 	"q_active_read", "q_active_write", "q_queued_read", "q_queued_write",
 	"scan_keys", "scan_objects", "scan_sort",
+	// Query Targeting metrics
+	"query_targeting_keys", "query_targeting_objects",
+	"doc_returned/s", "doc_inserted/s", "doc_updated/s", "doc_deleted/s",
+	"write_conflicts/s",
 }
 var wiredTigerChartsLegends = []string{
 	"wt_blkmgr_read", "wt_blkmgr_written", "wt_blkmgr_written_checkpoint",
@@ -343,6 +347,27 @@ func getAllServerStatusTimeSeriesDoc(serverStatusList []ServerStatusDoc) map[str
 			ts["scan_keys"].DataPoints = append(ts["scan_keys"].DataPoints, dataPoint(float64(stat.Metrics.QueryExecutor.Scanned-pstat.Metrics.QueryExecutor.Scanned)/seconds, t))
 			ts["scan_objects"].DataPoints = append(ts["scan_objects"].DataPoints, dataPoint(float64(stat.Metrics.QueryExecutor.ScannedObjects-pstat.Metrics.QueryExecutor.ScannedObjects)/seconds, t))
 			ts["scan_sort"].DataPoints = append(ts["scan_sort"].DataPoints, dataPoint(float64(stat.Metrics.Operation.ScanAndOrder-pstat.Metrics.Operation.ScanAndOrder)/seconds, t))
+
+			// Query Targeting (ratio of scanned to returned - lower is better, 1.0 is ideal)
+			docReturnedDelta := float64(stat.Metrics.Document.Returned - pstat.Metrics.Document.Returned)
+			if docReturnedDelta > 0 {
+				keysDelta := float64(stat.Metrics.QueryExecutor.Scanned - pstat.Metrics.QueryExecutor.Scanned)
+				objDelta := float64(stat.Metrics.QueryExecutor.ScannedObjects - pstat.Metrics.QueryExecutor.ScannedObjects)
+				ts["query_targeting_keys"].DataPoints = append(ts["query_targeting_keys"].DataPoints, dataPoint(keysDelta/docReturnedDelta, t))
+				ts["query_targeting_objects"].DataPoints = append(ts["query_targeting_objects"].DataPoints, dataPoint(objDelta/docReturnedDelta, t))
+			} else {
+				ts["query_targeting_keys"].DataPoints = append(ts["query_targeting_keys"].DataPoints, dataPoint(0, t))
+				ts["query_targeting_objects"].DataPoints = append(ts["query_targeting_objects"].DataPoints, dataPoint(0, t))
+			}
+
+			// Document metrics (per second)
+			ts["doc_returned/s"].DataPoints = append(ts["doc_returned/s"].DataPoints, dataPoint(float64(stat.Metrics.Document.Returned-pstat.Metrics.Document.Returned)/seconds, t))
+			ts["doc_inserted/s"].DataPoints = append(ts["doc_inserted/s"].DataPoints, dataPoint(float64(stat.Metrics.Document.Inserted-pstat.Metrics.Document.Inserted)/seconds, t))
+			ts["doc_updated/s"].DataPoints = append(ts["doc_updated/s"].DataPoints, dataPoint(float64(stat.Metrics.Document.Updated-pstat.Metrics.Document.Updated)/seconds, t))
+			ts["doc_deleted/s"].DataPoints = append(ts["doc_deleted/s"].DataPoints, dataPoint(float64(stat.Metrics.Document.Deleted-pstat.Metrics.Document.Deleted)/seconds, t))
+
+			// Write Conflicts (per second)
+			ts["write_conflicts/s"].DataPoints = append(ts["write_conflicts/s"].DataPoints, dataPoint(float64(stat.Metrics.Operation.WriteConflicts-pstat.Metrics.Operation.WriteConflicts)/seconds, t))
 
 			// WiredTiger deltas
 			ts["wt_blkmgr_read"].DataPoints = append(ts["wt_blkmgr_read"].DataPoints, dataPoint(float64(stat.WiredTiger.BlockManager.BytesRead-pstat.WiredTiger.BlockManager.BytesRead)/mb/seconds, t))
