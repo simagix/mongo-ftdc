@@ -76,8 +76,8 @@ func NewMetrics() *Metrics {
 	return &m
 }
 
-const analyticsEndpoint = `/d/simagix-grafana/mongodb-mongo-ftdc?orgId=1&from=%v&to=%v`
-const disksEndpoint = `/d/simagix-grafana-disks/mongodb-disks-stats?orgId=1&from=%v&to=%v`
+const analyticsEndpoint = `/d/simagix-grafana/mongodb-mongo-ftdc?from=%v&to=%v&kiosk=1`
+const disksEndpoint = `/d/simagix-grafana-disks/mongodb-disks-stats?from=%v&to=%v&kiosk=1`
 
 // SetVerbose sets verbose mode
 func (m *Metrics) SetVerbose(verbose bool) { m.verbose = verbose }
@@ -254,6 +254,7 @@ func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
 				headerList := []bson.M{}
 				rowList := [][]string{}
 				headerList = append(headerList, bson.M{"text": "Configurations", "type": "String"})
+				rowList = append(rowList, []string{fmt.Sprintf(`MongoDB v%v`, m.ftdcStats.ServerInfo.BuildInfo.Version)})
 				rowList = append(rowList, []string{fmt.Sprintf(`CPU: %v cores (%v)`,
 					m.ftdcStats.ServerInfo.HostInfo.System.NumCores,
 					m.ftdcStats.ServerInfo.HostInfo.System.CPUArch)})
@@ -264,7 +265,6 @@ func (m *Metrics) query(w http.ResponseWriter, r *http.Request) {
 					gox.GetStorageSize(1024*1024*m.ftdcStats.ServerInfo.HostInfo.System.MemSizeMB))})
 				rowList = append(rowList, []string{m.ftdcStats.ServerInfo.HostInfo.OS.Type + " (" + m.ftdcStats.ServerInfo.HostInfo.OS.Version + ")"})
 				rowList = append(rowList, []string{m.ftdcStats.ServerInfo.HostInfo.OS.Name})
-				rowList = append(rowList, []string{fmt.Sprintf(`MongoDB v%v`, m.ftdcStats.ServerInfo.BuildInfo.Version)})
 				doc := bson.M{"columns": headerList, "type": "table", "rows": rowList}
 				tsData = append(tsData, doc)
 			} else if target.Target == "assessment" {

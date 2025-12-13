@@ -46,12 +46,12 @@ func main() {
 	}
 	http.HandleFunc("/", gox.Cors(handler))
 
-	// Print endpoints again right before server starts (so it's visible at the bottom)
+	// Print endpoints right before server starts (so it's visible at the bottom)
+	log.Printf("FTDC API server starting on port %d\n", *port)
 	log.Println("=== FTDC Ready ===")
 	for _, endpoint := range metrics.GetEndPoints() {
 		log.Printf("Grafana: http://localhost:3030%s\n", endpoint)
 	}
-	log.Printf("FTDC API server starting on port %d\n", *port)
 
 	log.Fatal(http.ListenAndServe(addr, nil))
 }

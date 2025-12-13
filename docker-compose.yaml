@@ -12,6 +12,8 @@ services:
       GF_LOG_LEVEL: error
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    depends_on:
+      - ftdc
 
   ftdc:
     image: simagix/ftdc:latest

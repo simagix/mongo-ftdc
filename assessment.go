@@ -39,8 +39,6 @@ var FormulaMap = map[string]ScoreFormula{
 	"scan_keys":             {label: "scan_keys", formula: "scan_keys", low: 0, high: (1024 * 1024)},
 	"scan_objects":          {label: "scan_objects", formula: "max of [](scan_objects/scan_keys)", low: 2, high: 5},
 	"scan_sort":             {label: "scan_sort", formula: "scan_sort", low: 0, high: 1000},
-	"ticket_avail_read":     {label: "ticket_avail_read %%", formula: "(p5 of ticket_avail_read)/128", low: 0, high: 100},
-	"ticket_avail_write":    {label: "ticket_avail_write %%", formula: "(p5 of ticket_avail_write)/128", low: 0, high: 100},
 	"wt_cache_used":         {label: "wt_cache_used %%", formula: "(p95 of wt_cache_used)/wt_cache_max", low: 80, high: 95},
 	"wt_cache_dirty":        {label: "wt_cache_dirty %%", formula: "(p95 of wt_cache_dirty)/wt_cache_max", low: 5, high: 20},
 	"wt_dhandles_active":    {label: "wt_dhandles_active", formula: "(p95 of wt_dhandles_active)", low: 16000, high: 20000},
@@ -66,7 +64,7 @@ type metricStats struct {
 
 // NewAssessment returns assessment object
 func NewAssessment(stats FTDCStats) *Assessment {
-	assessment := Assessment{blocks: 3, stats: stats}
+	assessment := Assessment{blocks: 1, stats: stats}
 	cores := stats.ServerInfo.HostInfo.System.NumCores
 	m := FormulaMap["queued_read"]
 	m.low = cores
@@ -285,8 +283,6 @@ func (as *Assessment) getScore(metric string, p5 float64, median float64, p95 fl
 		score = GetScoreByRange(max, lwm, hwm)
 	} else if metric == "scan_sort" { // 1 k sorted in mem
 		score = GetScoreByRange(p95, lwm, hwm)
-	} else if strings.HasPrefix(metric, "ticket_avail_") {
-		score = int(100 * p5 / 128)
 	} else if metric == "wt_dhandles_active" {
 		score = GetScoreByRange(p95, lwm, hwm)
 	} else if metric == "wt_modified_evicted" || metric == "wt_unmodified_evicted" {

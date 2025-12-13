@@ -34,6 +34,44 @@
     },
     {
       "datasource": "ftdc",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 8,
+        "h": 6
+      },
+      "id": 30,
+      "options": {
+        "showHeader": false,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "target": "host_info",
+          "type": "table"
+        }
+      ],
+      "title": "Host Info",
+      "type": "table"
+    },
+    {
+      "datasource": "ftdc",
       "description": "Each metrics is scored by its utilization.",
       "fieldConfig": {
         "defaults": {
@@ -73,7 +111,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 60
+                "value": 80
               },
               {
                 "id": "custom.cellOptions",
@@ -145,10 +183,10 @@
         ]
       },
       "gridPos": {
-        "x": 9,
+        "x": 8,
         "y": 1,
-        "w": 15,
-        "h": 10
+        "w": 16,
+        "h": 6
       },
       "id": 34,
       "options": {
@@ -176,61 +214,6 @@
       "type": "table"
     },
     {
-      "columns": [],
-      "datasource": "ftdc",
-      "fontSize": "100%",
-      "gridPos": {
-        "x": 0,
-        "y": 1,
-        "w": 9,
-        "h": 10
-      },
-      "id": 30,
-      "links": [],
-      "options": {},
-      "pageSize": null,
-      "scroll": true,
-      "showHeader": true,
-      "sort": {
-        "col": 0,
-        "desc": true
-      },
-      "styles": [
-        {
-          "alias": "Time",
-          "align": "auto",
-          "dateFormat": "YYYY-MM-DD HH:mm:ss",
-          "pattern": "Time",
-          "type": "date"
-        },
-        {
-          "alias": "",
-          "align": "auto",
-          "colorMode": null,
-          "colors": [
-            "rgba(245, 54, 54, 0.9)",
-            "rgba(237, 129, 40, 0.89)",
-            "rgba(50, 172, 45, 0.97)"
-          ],
-          "decimals": 2,
-          "pattern": "/.*/",
-          "thresholds": [],
-          "type": "number",
-          "unit": "short"
-        }
-      ],
-      "targets": [
-        {
-          "refId": "A",
-          "target": "host_info",
-          "type": "table"
-        }
-      ],
-      "title": "Host Info",
-      "transform": "table",
-      "type": "table"
-    },
-    {
       "collapsed": false,
       "datasource": null,
       "gridPos": {
@@ -254,8 +237,8 @@
       "fillGradient": 0,
       "gridPos": {
         "x": 0,
-        "y": 12,
-        "w": 12,
+        "y": 17,
+        "w": 6,
         "h": 4
       },
       "hiddenSeries": false,
@@ -348,10 +331,10 @@
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
-        "x": 12,
+        "x": 0,
         "y": 12,
         "w": 12,
-        "h": 4
+        "h": 5
       },
       "hiddenSeries": false,
       "id": 16,
@@ -447,8 +430,8 @@
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
-        "x": 0,
-        "y": 16,
+        "x": 12,
+        "y": 12,
         "w": 6,
         "h": 5
       },
@@ -540,8 +523,8 @@
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
-        "x": 6,
-        "y": 16,
+        "x": 18,
+        "y": 12,
         "w": 6,
         "h": 5
       },
@@ -634,9 +617,9 @@
       "fillGradient": 0,
       "gridPos": {
         "x": 12,
-        "y": 16,
+        "y": 17,
         "w": 6,
-        "h": 5
+        "h": 4
       },
       "hiddenSeries": false,
       "id": 56,
@@ -732,10 +715,10 @@
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
-        "x": 18,
-        "y": 16,
+        "x": 6,
+        "y": 17,
         "w": 6,
-        "h": 5
+        "h": 4
       },
       "hiddenSeries": false,
       "id": 59,
