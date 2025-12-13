@@ -2,12 +2,9 @@
 
 A dockerized tool to view MongoDB FTDC (Full-Time Diagnostic Data Capture) metrics with Grafana dashboards.
 
-## Requirements
+This is the only publicly available tool to visually analyze FTDC data, similar to MongoDB's internal "t2" tool used by support engineers.
 
-- Docker and Docker Compose
-- Go 1.23+ (only if building from source)
-
-## Quick Start
+## Quick Start with Docker
 
 ### 1. Build Docker Images
 
@@ -28,18 +25,34 @@ mkdir -p ./diagnostic.data/
 cp /path/to/your/metrics.* ./diagnostic.data/
 ```
 
+FTDC files are typically located at:
+- Linux: `/var/lib/mongo/diagnostic.data/`
+- macOS: `/usr/local/var/mongodb/diagnostic.data/`
+- Atlas: Download from Atlas UI → Clusters → ... → Download Diagnostics
+
 ### 3. Start the Services
 
 ```bash
-docker-compose up -d
+docker-compose up
 ```
 
 ### 4. View Metrics in Grafana
 
-1. Open http://localhost:3030 in your browser
-2. Login with `admin` / `admin`
-3. Navigate to **Dashboards** → **MongoDB FTDC Analytics**
-4. Adjust the time range (top-right) to match your FTDC data timestamps
+Click the URL printed in the terminal output:
+```
+Grafana: http://localhost:3030/d/simagix-grafana/mongodb-mongo-ftdc?from=...&to=...&kiosk=1
+```
+
+No login required - anonymous access is enabled.
+
+## Features
+
+- **Assessment Panel** - Automatic health scoring with color-coded metrics
+- **Query Metrics** - Query Targeting ratio, Document metrics, Write Conflicts
+- **WiredTiger** - Cache usage, evictions, block manager stats
+- **Server Status** - Connections, latency, ops counters, memory
+- **System Metrics** - CPU usage, disk IOPS and utilization
+- **MongoDB 7.0+** - Transactions, Admission Control, Flow Control
 
 ## Loading Different FTDC Data
 
@@ -53,17 +66,12 @@ cp /path/to/new/metrics.* ./diagnostic.data/
 curl -XPOST http://localhost:5408/grafana/dir -d '{"dir": "/diagnostic.data"}'
 ```
 
-Returns JSON with the new time range:
-```json
-{"endpoint":"/d/simagix-grafana/mongodb-mongo-ftdc?orgId=1&from=1550767345000&to=1550804249000","ok":1}
-```
-
 ### Option 2: Restart Containers
 
 ```bash
 docker-compose down
 # Replace files in diagnostic.data/
-docker-compose up -d
+docker-compose up
 ```
 
 ## Shutdown
@@ -74,11 +82,10 @@ docker-compose down
 
 ## Building from Source
 
-To build the binary locally (without Docker):
+Requirements: Go 1.23+
 
 ```bash
 ./build.sh
-./dist/ftdc_json -version
 ./dist/ftdc_json /path/to/diagnostic.data/
 ```
 
@@ -88,6 +95,10 @@ To build the binary locally (without Docker):
 |---------|------|-------------|
 | Grafana | 3030 | Web UI |
 | FTDC API | 5408 | Data backend |
+
+## Support This Project
+
+If you find this tool useful, consider [sponsoring](https://github.com/sponsors/simagix) to support continued development.
 
 ## Disclaimer
 
