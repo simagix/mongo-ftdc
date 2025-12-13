@@ -2,7 +2,7 @@
 # Copyright 2019-present Kuei-chun Chen. All rights reserved.
 die() { echo "$*" 1>&2 ; exit 1; }
 [[ "$(which go)" = "" ]] && die "go command not found"
-EXEC=ftdc_json
+EXEC=mftdc
 VERSION="v$(cat version)-$(git log -1 --date=format:"%Y%m%d" --format="%ad")"
 LDFLAGS="-X main.version=$VERSION -X main.repo=$EXEC"
 
@@ -20,6 +20,6 @@ if [ "$1" == "docker" ]; then
     docker build --no-cache -f grafana/Dockerfile -t simagix/grafana-ftdc:${VER} .
     docker tag simagix/grafana-ftdc:${VER} simagix/grafana-ftdc
 else
-    env CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o dist/$EXEC main/ftdc_json.go
+    env CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o dist/$EXEC main/mftdc.go
     dist/$EXEC -version
 fi

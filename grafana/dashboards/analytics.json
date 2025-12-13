@@ -238,7 +238,7 @@
       "gridPos": {
         "x": 0,
         "y": 17,
-        "w": 6,
+        "w": 8,
         "h": 4
       },
       "hiddenSeries": false,
@@ -248,7 +248,7 @@
         "current": false,
         "max": false,
         "min": false,
-        "rightSide": true,
+        "rightSide": false,
         "show": true,
         "total": false,
         "values": false
@@ -333,7 +333,7 @@
       "gridPos": {
         "x": 0,
         "y": 12,
-        "w": 12,
+        "w": 8,
         "h": 5
       },
       "hiddenSeries": false,
@@ -343,7 +343,7 @@
         "current": false,
         "max": false,
         "min": false,
-        "rightSide": true,
+        "rightSide": false,
         "show": true,
         "total": false,
         "values": false
@@ -430,9 +430,9 @@
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
-        "x": 12,
+        "x": 8,
         "y": 12,
-        "w": 6,
+        "w": 8,
         "h": 5
       },
       "hiddenSeries": false,
@@ -523,9 +523,9 @@
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
-        "x": 18,
+        "x": 16,
         "y": 12,
-        "w": 6,
+        "w": 8,
         "h": 5
       },
       "hiddenSeries": false,
@@ -616,9 +616,9 @@
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
-        "x": 12,
+        "x": 16,
         "y": 17,
-        "w": 6,
+        "w": 8,
         "h": 4
       },
       "hiddenSeries": false,
@@ -715,9 +715,9 @@
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
-        "x": 6,
+        "x": 8,
         "y": 17,
-        "w": 6,
+        "w": 8,
         "h": 4
       },
       "hiddenSeries": false,
@@ -2347,7 +2347,7 @@
         "current": false,
         "max": false,
         "min": false,
-        "rightSide": true,
+        "rightSide": false,
         "show": true,
         "total": false,
         "values": false
@@ -2451,7 +2451,7 @@
         "current": false,
         "max": false,
         "min": false,
-        "rightSide": true,
+        "rightSide": false,
         "show": true,
         "total": false,
         "values": false
@@ -2550,7 +2550,7 @@
         "current": false,
         "max": false,
         "min": false,
-        "rightSide": true,
+        "rightSide": false,
         "show": true,
         "total": false,
         "values": false
@@ -2649,7 +2649,7 @@
         "current": false,
         "max": false,
         "min": false,
-        "rightSide": true,
+        "rightSide": false,
         "show": true,
         "total": false,
         "values": false

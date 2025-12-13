@@ -11,7 +11,7 @@
 # Test data (not needed for build)
 testdata/
 diagnostic.data/
-
+obfuscated/
 # Build artifacts
 dist/
 

@@ -4,6 +4,8 @@ A dockerized tool to view MongoDB FTDC (Full-Time Diagnostic Data Capture) metri
 
 This is the only publicly available tool to visually analyze FTDC data, similar to MongoDB's internal "t2" tool used by support engineers.
 
+If you find this tool useful, consider [sponsoring](https://github.com/sponsors/simagix) to support continued development.
+
 ## Quick Start with Docker
 
 ### 1. Build Docker Images
@@ -74,6 +76,51 @@ docker-compose down
 docker-compose up
 ```
 
+### Option 3: Use Different Data Directory
+
+Use the `FTDC_DATA` environment variable to switch directories:
+
+```bash
+# Default: uses ./diagnostic.data/
+docker-compose up
+
+# Use obfuscated data
+FTDC_DATA=obfuscated docker-compose up
+
+# Use any other directory
+FTDC_DATA=my_other_data docker-compose up
+```
+
+## Obfuscating PII
+
+Remove sensitive information (hostnames, IPs, replica set names) before sharing FTDC files:
+
+```bash
+# Build the tool
+./build.sh
+
+# Obfuscate files to obfuscated/ directory
+./dist/mftdc -obfuscate diagnostic.data/
+
+# Show what was obfuscated
+./dist/mftdc -obfuscate -show-mappings diagnostic.data/
+
+# Custom output directory
+./dist/mftdc -obfuscate -output my_output/ diagnostic.data/
+
+# View obfuscated data in Grafana
+FTDC_DATA=obfuscated docker-compose up
+```
+
+**What gets obfuscated:**
+| Field | Example | Obfuscated To |
+|-------|---------|---------------|
+| Hostnames | `mongodb-prod.company.com` | `host-1.example.local` |
+| IP addresses | `192.168.1.100` | `10.0.0.1` |
+| Replica set names | `prod-shard-0` | `rs1` |
+
+**What's preserved:** All metrics, timestamps, MongoDB version, OS type, CPU/memory specs, port numbers.
+
 ## Shutdown
 
 ```bash
@@ -86,7 +133,7 @@ Requirements: Go 1.23+
 
 ```bash
 ./build.sh
-./dist/ftdc_json /path/to/diagnostic.data/
+./dist/mftdc /path/to/diagnostic.data/
 ```
 
 ## Ports
@@ -95,10 +142,6 @@ Requirements: Go 1.23+
 |---------|------|-------------|
 | Grafana | 3030 | Web UI |
 | FTDC API | 5408 | Data backend |
-
-## Support This Project
-
-If you find this tool useful, consider [sponsoring](https://github.com/sponsors/simagix) to support continued development.
 
 ## Disclaimer
 

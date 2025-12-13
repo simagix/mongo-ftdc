@@ -1,5 +1,9 @@
 # Copyright 2019-present Kuei-chun Chen. All rights reserved.
 # docker-compose.yaml
+#
+# Usage:
+#   docker-compose up                              # uses ./diagnostic.data/
+#   FTDC_DATA=obfuscated docker-compose up         # uses ./obfuscated/
 
 services:
   grafana-ftdc:
@@ -21,5 +25,5 @@ services:
     ports:
       - "5408:5408"
     volumes:
-      - ./diagnostic.data:/diagnostic.data
-    command: /ftdc_json /diagnostic.data
+      - ./${FTDC_DATA:-diagnostic.data}:/diagnostic.data
+    command: /mftdc /diagnostic.data
