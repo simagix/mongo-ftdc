@@ -212,6 +212,13 @@ func (o *Obfuscator) obfuscateValueWithKey(key string, value interface{}) interf
 		if o.isPIIKey(keyLower) {
 			return o.obfuscateString(v, keyLower)
 		}
+		// Also check if value looks like IP/CIDR or path with cluster name
+		if o.looksLikeIP(v) {
+			return o.obfuscateIP(v)
+		}
+		if o.looksLikePathWithClusterName(v) {
+			return o.obfuscatePath(v)
+		}
 		return v
 	case bson.D:
 		return o.obfuscateBsonD(v)
@@ -259,12 +266,23 @@ func (o *Obfuscator) isPIIKey(key string) bool {
 	piiKeys := []string{
 		"hostname",
 		"host",
-		"name",      // for replica set member names (will check value format)
-		"setname",   // replica set name
-		"set",       // replica set name
-		"me",        // self hostname in replset
-		"primary",   // primary hostname
-		"syncingto", // syncing target hostname
+		"name",           // for replica set member names (will check value format)
+		"setname",        // replica set name
+		"set",            // replica set name
+		"replsetname",    // replica set name in config
+		"me",             // self hostname in replset
+		"primary",        // primary hostname
+		"syncingto",      // syncing target hostname
+		"syncsourcehost", // sync source hostname in replset status
+		// Path fields that may contain cluster/shard names
+		"dbpath",
+		"path",
+		"config",
+		"keyfile",
+		"cafile",
+		"pemkeyfile",
+		"clusterfile",
+		"clustercafile",
 	}
 
 	for _, pii := range piiKeys {
@@ -293,9 +311,9 @@ func (o *Obfuscator) obfuscateString(value, keyHint string) string {
 
 	// For other PII fields (like hostname, setname), use consistent mapping
 	switch keyHint {
-	case "hostname", "host", "me", "primary", "syncingto":
+	case "hostname", "host", "me", "primary", "syncingto", "syncsourcehost":
 		return o.getObfuscatedHostname(value)
-	case "setname", "set":
+	case "setname", "set", "replsetname":
 		return o.getObfuscatedReplSet(value)
 	case "name":
 		// "name" field: only obfuscate if it looks like a hostname (for replset members)
@@ -304,6 +322,9 @@ func (o *Obfuscator) obfuscateString(value, keyHint string) string {
 			return o.getObfuscatedHostname(value)
 		}
 		return value // Keep as-is (e.g., OS name)
+	case "dbpath", "path", "config", "keyfile", "cafile", "pemkeyfile", "clusterfile", "clustercafile":
+		// Obfuscate paths that may contain cluster/shard names
+		return o.obfuscatePath(value)
 	default:
 		// Don't obfuscate unknown patterns - safer to preserve
 		return value
@@ -317,10 +338,100 @@ func (o *Obfuscator) looksLikeHostPort(s string) bool {
 	return matched
 }
 
-// looksLikeIP checks if string looks like an IP address
+// obfuscatePath obfuscates file paths that may contain cluster/shard names
+func (o *Obfuscator) obfuscatePath(path string) string {
+	if path == "" {
+		return path
+	}
+
+	// Split path into segments
+	segments := strings.Split(path, "/")
+	lastIdx := len(segments) - 1
+
+	for i, seg := range segments {
+		// Skip empty segments
+		if seg == "" {
+			continue
+		}
+
+		// Skip the last segment if it looks like a file name (has extension)
+		if i == lastIdx && strings.Contains(seg, ".") {
+			continue
+		}
+
+		// Skip common system directories that don't reveal identity
+		segLower := strings.ToLower(seg)
+		if segLower == "srv" || segLower == "var" || segLower == "lib" || segLower == "etc" ||
+			segLower == "pki" || segLower == "tls" || segLower == "certs" || segLower == "private" ||
+			segLower == "mongodb" || segLower == "data" || segLower == "home" ||
+			segLower == "diagnostic.data" {
+			continue
+		}
+
+		// Check if segment looks like a cluster/shard/node identifier
+		// These typically have patterns like: prod-shard-0-node-1, atlas-xyz-shard-00-01, rs0
+		if o.looksLikeClusterName(seg) {
+			segments[i] = o.getObfuscatedPathSegment(seg)
+		}
+	}
+
+	return strings.Join(segments, "/")
+}
+
+// looksLikeClusterName checks if a path segment looks like a cluster/shard identifier
+func (o *Obfuscator) looksLikeClusterName(seg string) bool {
+	segLower := strings.ToLower(seg)
+
+	// Must contain identifying patterns AND look like a custom name (has hyphens or numbers)
+	hasIdentifyingPattern := strings.Contains(segLower, "shard") ||
+		strings.Contains(segLower, "-node") ||
+		strings.Contains(segLower, "node-") ||
+		strings.Contains(segLower, "cluster") ||
+		strings.Contains(segLower, "repl") ||
+		strings.Contains(segLower, "rs0") ||
+		strings.Contains(segLower, "rs1") ||
+		strings.Contains(segLower, "rs2")
+
+	// Also catch automation directories that reveal cloud provider
+	isAutomationDir := segLower == "mongodb-mms-automation"
+
+	return hasIdentifyingPattern || isAutomationDir
+}
+
+// looksLikePathWithClusterName checks if a string looks like a file path containing cluster identifiers
+func (o *Obfuscator) looksLikePathWithClusterName(s string) bool {
+	// Must start with / to be a path
+	if !strings.HasPrefix(s, "/") {
+		return false
+	}
+
+	// Check if any segment looks like a cluster name
+	segments := strings.Split(s, "/")
+	for _, seg := range segments {
+		if seg != "" && o.looksLikeClusterName(seg) {
+			return true
+		}
+	}
+	return false
+}
+
+// getObfuscatedPathSegment returns consistent obfuscated path segment
+func (o *Obfuscator) getObfuscatedPathSegment(segment string) string {
+	// Reuse hostname map for path segments to maintain consistency
+	if obfuscated, exists := o.hostnameMap[segment]; exists {
+		return obfuscated
+	}
+
+	o.counter++
+	obfuscated := fmt.Sprintf("server-%d", o.counter)
+	o.hostnameMap[segment] = obfuscated
+	return obfuscated
+}
+
+// looksLikeIP checks if string looks like an IP address or CIDR subnet
 func (o *Obfuscator) looksLikeIP(s string) bool {
-	// Match IPv4 pattern
-	matched, _ := regexp.MatchString(`^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$`, s)
+	// Match IPv4 pattern (with optional CIDR suffix)
+	matched, _ := regexp.MatchString(`^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(/\d{1,2})?$`, s)
 	return matched
 }
 
@@ -362,10 +473,18 @@ func (o *Obfuscator) obfuscateHostPort(value string) string {
 	return o.getObfuscatedHostname(host) + ":" + port
 }
 
-// obfuscateIP obfuscates IP addresses consistently
+// obfuscateIP obfuscates IP addresses consistently (handles CIDR notation)
 func (o *Obfuscator) obfuscateIP(ip string) string {
-	if obfuscated, exists := o.ipMap[ip]; exists {
-		return obfuscated
+	// Handle CIDR notation (e.g., 192.168.1.0/24)
+	cidrSuffix := ""
+	baseIP := ip
+	if idx := strings.Index(ip, "/"); idx != -1 {
+		baseIP = ip[:idx]
+		cidrSuffix = ip[idx:]
+	}
+
+	if obfuscated, exists := o.ipMap[baseIP]; exists {
+		return obfuscated + cidrSuffix
 	}
 
 	// Generate a fake IP in 10.x.x.x range
@@ -375,8 +494,8 @@ func (o *Obfuscator) obfuscateIP(ip string) string {
 		(o.counter/256)%256,
 		o.counter%256)
 
-	o.ipMap[ip] = fakeIP
-	return fakeIP
+	o.ipMap[baseIP] = fakeIP
+	return fakeIP + cidrSuffix
 }
 
 // getObfuscatedHostname returns consistent obfuscated hostname
