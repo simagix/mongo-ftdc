@@ -21,11 +21,11 @@ import (
 )
 
 // Obfuscator handles PII obfuscation with consistent mappings
+// Uses deterministic hashing so the same input always produces the same output
 type Obfuscator struct {
-	hostnameMap map[string]string
+	hostnameMap map[string]string // cache for performance
 	ipMap       map[string]string
 	replSetMap  map[string]string
-	counter     int
 }
 
 // NewObfuscator creates a new Obfuscator
@@ -34,7 +34,6 @@ func NewObfuscator() *Obfuscator {
 		hostnameMap: make(map[string]string),
 		ipMap:       make(map[string]string),
 		replSetMap:  make(map[string]string),
-		counter:     0,
 	}
 }
 
@@ -422,8 +421,9 @@ func (o *Obfuscator) getObfuscatedPathSegment(segment string) string {
 		return obfuscated
 	}
 
-	o.counter++
-	obfuscated := fmt.Sprintf("server-%d", o.counter)
+	// Deterministic: same input always produces same output
+	hash := sha256.Sum256([]byte(segment))
+	obfuscated := fmt.Sprintf("server-%s", hex.EncodeToString(hash[:4]))
 	o.hostnameMap[segment] = obfuscated
 	return obfuscated
 }
@@ -487,12 +487,9 @@ func (o *Obfuscator) obfuscateIP(ip string) string {
 		return obfuscated + cidrSuffix
 	}
 
-	// Generate a fake IP in 10.x.x.x range
-	o.counter++
-	fakeIP := fmt.Sprintf("10.%d.%d.%d",
-		(o.counter/256/256)%256,
-		(o.counter/256)%256,
-		o.counter%256)
+	// Deterministic: hash the IP to generate fake IP in 10.x.x.x range
+	hash := sha256.Sum256([]byte(baseIP))
+	fakeIP := fmt.Sprintf("10.%d.%d.%d", hash[0], hash[1], hash[2])
 
 	o.ipMap[baseIP] = fakeIP
 	return fakeIP + cidrSuffix
@@ -504,8 +501,9 @@ func (o *Obfuscator) getObfuscatedHostname(hostname string) string {
 		return obfuscated
 	}
 
-	o.counter++
-	obfuscated := fmt.Sprintf("host-%d.example.local", o.counter)
+	// Deterministic: same hostname always produces same obfuscated value
+	hash := sha256.Sum256([]byte(hostname))
+	obfuscated := fmt.Sprintf("host-%s.local", hex.EncodeToString(hash[:4]))
 	o.hostnameMap[hostname] = obfuscated
 	return obfuscated
 }
@@ -516,8 +514,9 @@ func (o *Obfuscator) getObfuscatedReplSet(name string) string {
 		return obfuscated
 	}
 
-	o.counter++
-	obfuscated := fmt.Sprintf("rs%d", o.counter)
+	// Deterministic: same replica set name always produces same obfuscated value
+	hash := sha256.Sum256([]byte(name))
+	obfuscated := fmt.Sprintf("rs-%s", hex.EncodeToString(hash[:4]))
 	o.replSetMap[name] = obfuscated
 	return obfuscated
 }

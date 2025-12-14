@@ -145,6 +145,57 @@ func TestObfuscator_GetMappings(t *testing.T) {
 	}
 }
 
+func TestObfuscator_DeterministicAcrossRuns(t *testing.T) {
+	// Create two separate Obfuscator instances (simulating two separate runs)
+	o1 := NewObfuscator()
+	o2 := NewObfuscator()
+
+	// Test hostnames
+	hostname := "prod-mongodb-server1.company.com"
+	h1 := o1.getObfuscatedHostname(hostname)
+	h2 := o2.getObfuscatedHostname(hostname)
+	if h1 != h2 {
+		t.Errorf("Hostname obfuscation not deterministic: %s vs %s", h1, h2)
+	}
+	t.Logf("Hostname: %s -> %s", hostname, h1)
+
+	// Test IPs
+	ip := "192.168.1.100"
+	ip1 := o1.obfuscateIP(ip)
+	ip2 := o2.obfuscateIP(ip)
+	if ip1 != ip2 {
+		t.Errorf("IP obfuscation not deterministic: %s vs %s", ip1, ip2)
+	}
+	t.Logf("IP: %s -> %s", ip, ip1)
+
+	// Test replica sets
+	rs := "production-replica-set"
+	rs1 := o1.getObfuscatedReplSet(rs)
+	rs2 := o2.getObfuscatedReplSet(rs)
+	if rs1 != rs2 {
+		t.Errorf("ReplSet obfuscation not deterministic: %s vs %s", rs1, rs2)
+	}
+	t.Logf("ReplSet: %s -> %s", rs, rs1)
+
+	// Test host:port
+	hostPort := "mongodb-server.company.com:27017"
+	hp1 := o1.obfuscateHostPort(hostPort)
+	hp2 := o2.obfuscateHostPort(hostPort)
+	if hp1 != hp2 {
+		t.Errorf("HostPort obfuscation not deterministic: %s vs %s", hp1, hp2)
+	}
+	t.Logf("HostPort: %s -> %s", hostPort, hp1)
+
+	// Test path segments
+	pathSeg := "atlas-prod-shard-00-01"
+	ps1 := o1.getObfuscatedPathSegment(pathSeg)
+	ps2 := o2.getObfuscatedPathSegment(pathSeg)
+	if ps1 != ps2 {
+		t.Errorf("PathSegment obfuscation not deterministic: %s vs %s", ps1, ps2)
+	}
+	t.Logf("PathSegment: %s -> %s", pathSeg, ps1)
+}
+
 func TestObfuscator_ObfuscateFile(t *testing.T) {
 	// Test with actual FTDC file if available
 	testFiles := []string{

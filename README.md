@@ -115,11 +115,14 @@ FTDC_DATA=obfuscated docker-compose up
 **What gets obfuscated:**
 | Field | Example | Obfuscated To |
 |-------|---------|---------------|
-| Hostnames | `mongodb-prod.company.com` | `host-1.example.local` |
-| IP addresses | `192.168.1.100` | `10.0.0.1` |
-| Replica set names | `prod-shard-0` | `rs1` |
+| Hostnames | `mongodb-prod.company.com` | `host-2763492a.local` |
+| IP addresses | `192.168.1.100` | `10.42.57.241` |
+| Replica set names | `prod-shard-0` | `rs-43846b56` |
+| File paths | `/srv/atlas-prod-shard/data` | `/srv/server-89be0647/data` |
 
 **What's preserved:** All metrics, timestamps, MongoDB version, OS type, CPU/memory specs, port numbers.
+
+**Deterministic mapping:** The obfuscation uses SHA256 hashing, so the same input always produces the same output. This ensures consistency when correlating multiple FTDC files from the same cluster.
 
 ## Shutdown
 
