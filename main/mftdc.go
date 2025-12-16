@@ -46,11 +46,6 @@ func main() {
 
 	// Server mode (default)
 	addr := fmt.Sprintf(":%d", *port)
-	if listener, err := net.Listen("tcp", addr); err != nil {
-		log.Fatal(err)
-	} else {
-		listener.Close()
-	}
 	metrics := ftdc.NewMetrics()
 	metrics.SetLatest(*latest)
 	metrics.SetVerbose(*verbose)
@@ -59,14 +54,18 @@ func main() {
 	}
 	http.HandleFunc("/", gox.Cors(handler))
 
-	// Print endpoints right before server starts (so it's visible at the bottom)
+	// Create listener first, then print ready message
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatal(err)
+	}
 	log.Printf("FTDC API server starting on port %d\n", *port)
 	log.Println("=== FTDC Ready ===")
 	for _, endpoint := range metrics.GetEndPoints() {
 		log.Printf("Grafana: http://localhost:3030%s\n", endpoint)
 	}
 
-	log.Fatal(http.ListenAndServe(addr, nil))
+	log.Fatal(http.Serve(listener, nil))
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {

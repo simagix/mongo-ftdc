@@ -44,6 +44,29 @@ var FormulaMap = map[string]ScoreFormula{
 	"wt_dhandles_active":    {label: "wt_dhandles_active", formula: "(p95 of wt_dhandles_active)", low: 16000, high: 20000},
 	"wt_modified_evicted":   {label: "wt_modified_evicted  %%", formula: "(p95 of wt_modified_evicted)/(pages of wt_cache_max)", low: 5, high: 10},
 	"wt_unmodified_evicted": {label: "wt_unmodified_evicted  %%", formula: "(p95 of wt_unmodified_evicted)/(pages of wt_cache_max)", low: 5, high: 10},
+
+	// Query Targeting - ratio of keys/docs examined to docs returned (ideal is 1:1)
+	"query_targeting_keys":    {label: "query_targeting_keys", formula: "p95 of (keys_examined/docs_returned)", low: 10, high: 100},
+	"query_targeting_objects": {label: "query_targeting_objects", formula: "p95 of (docs_examined/docs_returned)", low: 10, high: 100},
+	"write_conflicts/s":       {label: "write_conflicts/s", formula: "p95 of write_conflicts/s", low: 10, high: 100},
+
+	// Replication - lag in seconds (per host)
+	"repl_lag_": {label: "repl_lag_&lt;host&gt; (s)", formula: "p95 of replication lag", low: 5, high: 30},
+
+	// MongoDB 7.0+ Admission Control - % of tickets in use
+	"queues_read_out":  {label: "queues_read_out %%", formula: "(p95 of queues_read_out)/queues_read_total", low: 50, high: 90},
+	"queues_write_out": {label: "queues_write_out %%", formula: "(p95 of queues_write_out)/queues_write_total", low: 50, high: 90},
+
+	// Transactions - inactive txns hold resources, high abort rate indicates contention
+	"txn_inactive":  {label: "txn_inactive", formula: "p95 of txn_inactive", low: 5, high: 20},
+	"txn_aborted/s": {label: "txn_aborted/s", formula: "p95 of txn_aborted/s", low: 10, high: 50},
+
+	// tcmalloc Memory - fragmentation ratio
+	"tcmalloc_fragmentation": {label: "tcmalloc_frag %%", formula: "(heap-in_use)/heap", low: 20, high: 50},
+
+	// Flow Control - lagged members and time acquiring tickets
+	"flowctl_lagged_count":  {label: "flowctl_lagged_count", formula: "p95 of flowctl_lagged_count", low: 1, high: 3},
+	"flowctl_acquiring_us":  {label: "flowctl_acquiring (ms)", formula: "p95 of flowctl_acquiring_us/1000", low: 100, high: 1000},
 }
 
 // Assessment stores timeserie data
@@ -99,6 +122,10 @@ func (as *Assessment) GetAssessment(from time.Time, to time.Time) map[string]int
 		marr := []metricStats{}
 		metrics := serverStatusChartsLegends
 		metrics = append(metrics, wiredTigerChartsLegends...)
+		metrics = append(metrics, queuesChartsLegends...)
+		metrics = append(metrics, transactionsChartsLegends...)
+		metrics = append(metrics, flowControlChartsLegends...)
+		metrics = append(metrics, replSetChartsLegends...)
 		for _, sm := range systemMetricsChartsLegends {
 			if strings.HasPrefix(sm, "cpu_") {
 				metrics = append(metrics, sm)
@@ -108,6 +135,16 @@ func (as *Assessment) GetAssessment(from time.Time, to time.Time) map[string]int
 			m := as.getStatsArray(v, from, to)
 			if m.score < 101 || as.verbose {
 				marr = append(marr, m)
+			}
+		}
+		// tcmalloc fragmentation assessment
+		if heap, ok := as.stats.TimeSeriesData["tcmalloc_heap"]; ok && len(heap.DataPoints) > 0 {
+			inUse := as.stats.TimeSeriesData["tcmalloc_in_use"]
+			if len(inUse.DataPoints) > 0 {
+				m := as.getTcmallocFragmentation(from, to)
+				if m.score < 101 || as.verbose {
+					marr = append(marr, m)
+				}
 			}
 		}
 		for k, v := range as.stats.DiskStats {
@@ -121,6 +158,17 @@ func (as *Assessment) GetAssessment(from time.Time, to time.Time) map[string]int
 			}
 			p5, median, p95 = as.getStatsByData(v.Utilization, from, to)
 			m = as.getStatsArrayByValues("disku_"+k, p5, median, p95)
+			if m.score < 101 || as.verbose {
+				marr = append(marr, m)
+			}
+		}
+		// Replication lags assessment (stored per-host in separate map)
+		for k, v := range as.stats.ReplicationLags {
+			p5, median, p95 := as.getStatsByData(v, from, to)
+			if p95 == 0 {
+				continue
+			}
+			m := as.getStatsArrayByValues("repl_lag_"+k, p5, median, p95)
 			if m.score < 101 || as.verbose {
 				marr = append(marr, m)
 			}
@@ -188,6 +236,51 @@ func (as *Assessment) getStatsArrayByValues(metric string, p5 float64, median fl
 		median: math.Round(median), p95: math.Round(p95)}
 }
 
+func (as *Assessment) getTcmallocFragmentation(from time.Time, to time.Time) metricStats {
+	heap := as.stats.TimeSeriesData["tcmalloc_heap"]
+	inUse := as.stats.TimeSeriesData["tcmalloc_in_use"]
+	heapStats := FilterTimeSeriesData(heap, from, to)
+	inUseStats := FilterTimeSeriesData(inUse, from, to)
+	if len(heapStats.DataPoints) == 0 || len(inUseStats.DataPoints) == 0 {
+		return metricStats{label: "tcmalloc_frag %", score: 101}
+	}
+	// Calculate fragmentation ratio for each data point
+	ratios := []float64{}
+	minLen := len(heapStats.DataPoints)
+	if len(inUseStats.DataPoints) < minLen {
+		minLen = len(inUseStats.DataPoints)
+	}
+	for i := 0; i < minLen; i++ {
+		h := heapStats.DataPoints[i][0]
+		u := inUseStats.DataPoints[i][0]
+		if h > 0 {
+			frag := 100 * (h - u) / h
+			ratios = append(ratios, frag)
+		}
+	}
+	if len(ratios) == 0 {
+		return metricStats{label: "tcmalloc_frag %", score: 101}
+	}
+	sort.Float64s(ratios)
+	end := len(ratios) - 1
+	samples := float64(len(ratios) + 1)
+	p5Idx := int(samples * 0.05)
+	if p5Idx > end {
+		p5Idx = end
+	}
+	medianIdx := int(samples * 0.5)
+	if medianIdx > end {
+		medianIdx = end
+	}
+	p95Idx := int(samples * 0.95)
+	if p95Idx > end {
+		p95Idx = end
+	}
+	p5, median, p95 := ratios[p5Idx], ratios[medianIdx], ratios[p95Idx]
+	score := GetScoreByRange(p95, 20, 50) // 20% fragmentation is okay, 50% is bad
+	return metricStats{label: "tcmalloc_frag %", score: score, p5: math.Round(p5), median: math.Round(median), p95: math.Round(p95)}
+}
+
 func (as *Assessment) getStatsByData(data TimeSeriesDoc, from time.Time, to time.Time) (float64, float64, float64) {
 	stats := FilterTimeSeriesData(data, from, to)
 	if len(stats.DataPoints) == 0 {
@@ -229,6 +322,8 @@ func (as *Assessment) getScore(metric string, p5 float64, median float64, p95 fl
 		met = "iops_"
 	} else if strings.HasPrefix(met, "ops_") {
 		met = "ops_"
+	} else if strings.HasPrefix(met, "repl_lag_") {
+		met = "repl_lag_"
 	}
 	if FormulaMap[met].label == "" {
 		return score
@@ -287,6 +382,46 @@ func (as *Assessment) getScore(metric string, p5 float64, median float64, p95 fl
 		score = GetScoreByRange(p95, lwm, hwm)
 	} else if metric == "wt_modified_evicted" || metric == "wt_unmodified_evicted" {
 		score = GetScoreByRange(p95/float64(as.maxCachePages), lwm, hwm)
+	} else if metric == "query_targeting_keys" || metric == "query_targeting_objects" {
+		// Query targeting ratio: keys/docs examined vs docs returned
+		// Ideal is 1:1, >10 is concerning, >100 is bad
+		if p95 > 0 {
+			score = GetScoreByRange(p95, lwm, hwm)
+		}
+	} else if metric == "write_conflicts/s" {
+		// Write conflicts indicate transaction contention
+		score = GetScoreByRange(p95, lwm, hwm)
+	} else if strings.HasPrefix(metric, "repl_lag_") {
+		// Replication lag in seconds: <5s is good, >30s is critical
+		score = GetScoreByRange(p95, lwm, hwm)
+	} else if metric == "queues_read_out" || metric == "queues_write_out" {
+		// MongoDB 7.0+ Admission Control: % of tickets in use
+		// Need to calculate as percentage of total tickets
+		totalMetric := strings.Replace(metric, "_out", "_total", 1)
+		if total, ok := as.stats.TimeSeriesData[totalMetric]; ok && len(total.DataPoints) > 0 {
+			// Use first total value as reference (usually constant)
+			totalTickets := total.DataPoints[0][0]
+			if totalTickets > 0 {
+				pct := 100 * p95 / totalTickets
+				score = GetScoreByRange(pct, lwm, hwm)
+			}
+		}
+	} else if metric == "txn_inactive" {
+		// Inactive transactions hold resources - should be minimal
+		score = GetScoreByRange(p95, lwm, hwm)
+	} else if metric == "txn_aborted/s" {
+		// High abort rate indicates contention
+		score = GetScoreByRange(p95, lwm, hwm)
+	} else if metric == "flowctl_lagged_count" {
+		// Flow control lagged members: >0 means some members are lagging
+		if p95 > 0 {
+			score = GetScoreByRange(p95, lwm, hwm)
+		}
+	} else if metric == "flowctl_acquiring_us" {
+		// Time spent acquiring flow control tickets (microseconds)
+		// Convert to ms for scoring: 100ms is concerning, 1000ms is bad
+		ms := p95 / 1000
+		score = GetScoreByRange(ms, lwm, hwm)
 	}
 	return score
 }
