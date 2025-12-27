@@ -112,9 +112,9 @@ func traverseDocElem(attribsList *[]string, attribsMap *map[string][]uint64, doc
 		}
 	case primitive.Timestamp:
 		tKey := parentPath + "/t"
-		addAttribute(attribsList, attribsMap, tKey, uint64(0), sliceCap)
+		addAttribute(attribsList, attribsMap, tKey, uint64(value.T), sliceCap)
 		iKey := parentPath + "/i"
-		addAttribute(attribsList, attribsMap, iKey, uint64(0), sliceCap)
+		addAttribute(attribsList, attribsMap, iKey, uint64(value.I), sliceCap)
 	case primitive.ObjectID: // ignore it
 	case string: // ignore it
 	case float64:
