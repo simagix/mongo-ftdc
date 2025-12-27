@@ -28,6 +28,7 @@ func main() {
 	obfuscate := flag.Bool("obfuscate", false, "obfuscate PII and save to output directory")
 	outputDir := flag.String("output", "obfuscated", "output directory for obfuscated files")
 	showMappings := flag.Bool("show-mappings", false, "show obfuscation mappings (with -obfuscate)")
+	server := flag.Bool("server", false, "start API server for Grafana (default: diagnosis only)")
 	flag.Parse()
 
 	if *ver {
@@ -44,14 +45,23 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Server mode (default)
-	addr := fmt.Sprintf(":%d", *port)
 	metrics := ftdc.NewMetrics()
 	metrics.SetLatest(*latest)
 	metrics.SetVerbose(*verbose)
 	if err := metrics.ProcessFiles(flag.Args()); err != nil {
 		log.Fatal(err)
 	}
+
+	// Run diagnosis (always)
+	runDiagnosis(metrics, flag.Args())
+
+	// Default: diagnosis only, exit
+	if !*server {
+		os.Exit(0)
+	}
+
+	// Server mode (with -server flag)
+	addr := fmt.Sprintf(":%d", *port)
 	http.HandleFunc("/", gox.Cors(handler))
 
 	// Create listener first, then print ready message
@@ -163,4 +173,64 @@ func isMetricsFile(name string) bool {
 		return true
 	}
 	return false
+}
+
+func runDiagnosis(metrics *ftdc.Metrics, args []string) {
+	if len(args) == 0 {
+		return
+	}
+
+	// Get time range and stats
+	from, to := metrics.GetTimeRange()
+	if from.IsZero() || to.IsZero() {
+		return
+	}
+
+	stats := metrics.GetFTDCStats()
+
+	// Run diagnosis
+	diagnosis := ftdc.NewDiagnosis(stats, from, to)
+	diagnosis.Run()
+
+	// Print to stdout
+	diagnosis.PrintReport()
+
+	// Generate HTML report
+	htmlOutput := determineHTMLPath(args[0])
+	if err := diagnosis.GenerateHTML(htmlOutput); err != nil {
+		log.Printf("Warning: failed to generate HTML report: %v", err)
+		return
+	}
+	fmt.Printf("📄 HTML report saved to: %s\n", htmlOutput)
+}
+
+func determineHTMLPath(inputPath string) string {
+	info, err := os.Stat(inputPath)
+	if err != nil {
+		// Default to current directory if can't stat
+		return "ftdc_diagnosis.html"
+	}
+
+	if info.IsDir() {
+		// Input is a directory - save HTML in that directory
+		return filepath.Join(inputPath, "ftdc_diagnosis.html")
+	}
+
+	// Input is a file - replace "metrics." with "ftdc-diag." and add .html
+	// Example: metrics.2025-12-10T11-40-06Z-00000 -> ftdc-diag.2025-12-10T11-40-06Z.html
+	dir := filepath.Dir(inputPath)
+	name := filepath.Base(inputPath)
+
+	if len(name) > 8 && name[:8] == "metrics." {
+		// Extract timestamp part (remove trailing -00000 suffix if present)
+		suffix := name[8:] // e.g., "2025-12-10T11-40-06Z-00000"
+		// Remove the trailing -NNNNN part
+		if idx := len(suffix) - 6; idx > 0 && suffix[idx] == '-' {
+			suffix = suffix[:idx] // e.g., "2025-12-10T11-40-06Z"
+		}
+		return filepath.Join(dir, "ftdc-diag."+suffix+".html")
+	}
+
+	// Fallback for other file types
+	return filepath.Join(dir, "ftdc_diagnosis.html")
 }

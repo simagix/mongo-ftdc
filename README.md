@@ -1,12 +1,25 @@
 # MongoDB FTDC Metrics and Charts
 
-A dockerized tool to view MongoDB FTDC (Full-Time Diagnostic Data Capture) metrics with Grafana dashboards.
+A tool to analyze MongoDB FTDC (Full-Time Diagnostic Data Capture) data with automatic diagnostics and Grafana dashboards.
 
 This is the only publicly available tool to visually analyze FTDC data, similar to MongoDB's internal "t2" tool used by support engineers.
 
 If you find this tool useful, consider [sponsoring](https://github.com/sponsors/simagix) to support continued development.
 
-## Quick Start with Docker
+## Quick Analysis (CLI)
+
+Run diagnosis directly on FTDC files:
+
+```bash
+./build.sh
+./dist/mftdc diagnostic.data/
+```
+
+This generates:
+- Console report with detected issues
+- HTML report saved to `diagnostic.data/ftdc_diagnosis.html`
+
+## Interactive Mode with Docker
 
 ### 1. Build Docker Images
 
@@ -136,7 +149,12 @@ Requirements: Go 1.23+
 
 ```bash
 ./build.sh
+
+# Quick diagnosis (default)
 ./dist/mftdc /path/to/diagnostic.data/
+
+# Start server for Grafana
+./dist/mftdc -server /path/to/diagnostic.data/
 ```
 
 ## Ports

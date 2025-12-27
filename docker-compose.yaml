@@ -26,4 +26,4 @@ services:
       - "5408:5408"
     volumes:
       - ./${FTDC_DATA:-diagnostic.data}:/diagnostic.data
-    command: /mftdc /diagnostic.data
+    command: /mftdc -server /diagnostic.data
