@@ -88,6 +88,19 @@ func (m *Metrics) SetLatest(latest int) { m.latest = latest }
 // GetEndPoints returns the Grafana endpoints
 func (m *Metrics) GetEndPoints() []string { return m.endpoints }
 
+// GetFTDCStats returns the FTDC stats for analysis
+func (m *Metrics) GetFTDCStats() FTDCStats { return m.ftdcStats }
+
+// GetTimeRange returns the time range of the FTDC data
+func (m *Metrics) GetTimeRange() (time.Time, time.Time) {
+	var from, to time.Time
+	if len(m.ftdcStats.ServerStatusList) > 0 {
+		from = m.ftdcStats.ServerStatusList[0].LocalTime
+		to = m.ftdcStats.ServerStatusList[len(m.ftdcStats.ServerStatusList)-1].LocalTime
+	}
+	return from, to
+}
+
 // ProcessFiles reads metrics files/data
 func (m *Metrics) ProcessFiles(filenames []string) error {
 	hostname, _ := os.Hostname()
