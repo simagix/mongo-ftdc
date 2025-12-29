@@ -103,7 +103,6 @@ func (m *Metrics) GetTimeRange() (time.Time, time.Time) {
 
 // ProcessFiles reads metrics files/data
 func (m *Metrics) ProcessFiles(filenames []string) error {
-	hostname, _ := os.Hostname()
 	filenames = GetMetricsFilenames(filenames)
 	if len(filenames) == 0 {
 		return errors.New("no valid data file found")
@@ -111,12 +110,7 @@ func (m *Metrics) ProcessFiles(filenames []string) error {
 	if m.latest > 0 && m.latest < len(filenames) {
 		filenames = filenames[len(filenames)-m.latest:]
 	}
-	if hostname == "ftdc" { // from docker-compose
-		if len(filenames) > 3 { // avoid OOM killer
-			fmt.Println("* limits to latest 3 files in a Docker container")
-			filenames = filenames[len(filenames)-3:]
-		}
-	}
+
 	diag := NewDiagnosticData()
 	if err := diag.DecodeDiagnosticData(filenames); err != nil { // get summary
 		return err

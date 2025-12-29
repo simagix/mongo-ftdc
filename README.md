@@ -98,10 +98,10 @@ Use the `FTDC_DATA` environment variable to switch directories:
 docker-compose up
 
 # Use obfuscated data
-FTDC_DATA=obfuscated docker-compose up
+FTDC_DATA=./obfuscated docker-compose up
 
 # Use any other directory
-FTDC_DATA=my_other_data docker-compose up
+FTDC_DATA=/my_other_data docker-compose up
 ```
 
 ## Obfuscating PII
@@ -122,7 +122,7 @@ Remove sensitive information (hostnames, IPs, replica set names) before sharing 
 ./dist/mftdc -obfuscate -output my_output/ diagnostic.data/
 
 # View obfuscated data in Grafana
-FTDC_DATA=obfuscated docker-compose up
+FTDC_DATA=./obfuscated docker-compose up
 ```
 
 **What gets obfuscated:**
@@ -142,6 +142,10 @@ FTDC_DATA=obfuscated docker-compose up
 ```bash
 docker-compose down
 ```
+
+## Native macOS Installation
+
+For running Grafana natively on macOS (without Docker), see [docs/grafana-macos.md](docs/grafana-macos.md).
 
 ## Building from Source
 

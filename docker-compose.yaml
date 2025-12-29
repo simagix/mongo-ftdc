@@ -3,7 +3,7 @@
 #
 # Usage:
 #   docker-compose up                              # uses ./diagnostic.data/
-#   FTDC_DATA=obfuscated docker-compose up         # uses ./obfuscated/
+#   FTDC_DATA=./obfuscated docker-compose up         # uses ./obfuscated/
 
 services:
   grafana-ftdc:
@@ -25,5 +25,5 @@ services:
     ports:
       - "5408:5408"
     volumes:
-      - ./${FTDC_DATA:-diagnostic.data}:/diagnostic.data
+      - ${FTDC_DATA:-./diagnostic.data}:/diagnostic.data
     command: /mftdc -server /diagnostic.data

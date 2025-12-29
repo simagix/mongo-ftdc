@@ -69,10 +69,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// Auto-detect Grafana port: Docker (hostname=ftdc) uses 3030, native uses 3000
+	grafanaPort := 3000
+	if hostname, _ := os.Hostname(); hostname == "ftdc" {
+		grafanaPort = 3030
+	}
 	log.Printf("FTDC API server starting on port %d\n", *port)
 	log.Println("=== FTDC Ready ===")
 	for _, endpoint := range metrics.GetEndPoints() {
-		log.Printf("Grafana: http://localhost:3030%s\n", endpoint)
+		log.Printf("Grafana: http://localhost:%d%s\n", grafanaPort, endpoint)
 	}
 
 	log.Fatal(http.Serve(listener, nil))
