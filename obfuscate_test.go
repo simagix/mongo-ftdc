@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/simagix/gox"
 )
 
 func TestObfuscator_ObfuscateHostname(t *testing.T) {
@@ -14,8 +16,8 @@ func TestObfuscator_ObfuscateHostname(t *testing.T) {
 
 	// Test hostname obfuscation is consistent
 	original := "mongodb-prod-server1.company.com"
-	obfuscated1 := o.getObfuscatedHostname(original)
-	obfuscated2 := o.getObfuscatedHostname(original)
+	obfuscated1 := o.Obfuscator.ObfuscateHostname(original)
+	obfuscated2 := o.Obfuscator.ObfuscateHostname(original)
 
 	if obfuscated1 != obfuscated2 {
 		t.Errorf("Expected consistent obfuscation, got %s and %s", obfuscated1, obfuscated2)
@@ -27,7 +29,7 @@ func TestObfuscator_ObfuscateHostname(t *testing.T) {
 
 	// Different hostnames should get different obfuscated values
 	different := "mongodb-prod-server2.company.com"
-	obfuscatedDiff := o.getObfuscatedHostname(different)
+	obfuscatedDiff := o.Obfuscator.ObfuscateHostname(different)
 	if obfuscated1 == obfuscatedDiff {
 		t.Errorf("Expected different hostnames to get different obfuscation")
 	}
@@ -38,16 +40,21 @@ func TestObfuscator_ObfuscateIP(t *testing.T) {
 
 	// Test IP obfuscation
 	original := "192.168.1.100"
-	obfuscated := o.obfuscateIP(original)
+	obfuscated := o.Obfuscator.ObfuscateIP(original)
 
 	if obfuscated == original {
 		t.Errorf("Expected IP to be obfuscated")
 	}
 
 	// Should be consistent
-	obfuscated2 := o.obfuscateIP(original)
+	obfuscated2 := o.Obfuscator.ObfuscateIP(original)
 	if obfuscated != obfuscated2 {
 		t.Errorf("Expected consistent IP obfuscation")
+	}
+
+	// Should be in 10.x.x.x range (IPStylePrivate)
+	if obfuscated[:3] != "10." {
+		t.Errorf("Expected IP in 10.x.x.x range, got %s", obfuscated)
 	}
 }
 
@@ -56,7 +63,7 @@ func TestObfuscator_ObfuscateHostPort(t *testing.T) {
 
 	// Test hostname:port
 	original := "mongodb-server.company.com:27017"
-	obfuscated := o.obfuscateHostPort(original)
+	obfuscated := o.Obfuscator.ObfuscateHostPort(original)
 
 	if obfuscated == original {
 		t.Errorf("Expected host:port to be obfuscated")
@@ -69,7 +76,7 @@ func TestObfuscator_ObfuscateHostPort(t *testing.T) {
 
 	// Test IP:port
 	ipOriginal := "192.168.1.100:27017"
-	ipObfuscated := o.obfuscateHostPort(ipOriginal)
+	ipObfuscated := o.Obfuscator.ObfuscateHostPort(ipOriginal)
 
 	if ipObfuscated == ipOriginal {
 		t.Errorf("Expected IP:port to be obfuscated")
@@ -100,8 +107,6 @@ func TestObfuscator_LooksLikeIP(t *testing.T) {
 }
 
 func TestObfuscator_LooksLikeHostPort(t *testing.T) {
-	o := NewObfuscator()
-
 	tests := []struct {
 		input    string
 		expected bool
@@ -115,9 +120,9 @@ func TestObfuscator_LooksLikeHostPort(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		result := o.looksLikeHostPort(tt.input)
+		result := gox.LooksLikeHostPort(tt.input)
 		if result != tt.expected {
-			t.Errorf("looksLikeHostPort(%s) = %v, expected %v", tt.input, result, tt.expected)
+			t.Errorf("LooksLikeHostPort(%s) = %v, expected %v", tt.input, result, tt.expected)
 		}
 	}
 }
@@ -126,9 +131,9 @@ func TestObfuscator_GetMappings(t *testing.T) {
 	o := NewObfuscator()
 
 	// Obfuscate some values
-	o.getObfuscatedHostname("host1.example.com")
-	o.obfuscateIP("192.168.1.1")
-	o.getObfuscatedReplSet("production-rs")
+	o.Obfuscator.ObfuscateHostname("host1.example.com")
+	o.Obfuscator.ObfuscateIP("192.168.1.1")
+	o.Obfuscator.ObfuscateReplSet("production-rs")
 
 	mappings := o.GetMappings()
 
@@ -152,8 +157,8 @@ func TestObfuscator_DeterministicAcrossRuns(t *testing.T) {
 
 	// Test hostnames
 	hostname := "prod-mongodb-server1.company.com"
-	h1 := o1.getObfuscatedHostname(hostname)
-	h2 := o2.getObfuscatedHostname(hostname)
+	h1 := o1.Obfuscator.ObfuscateHostname(hostname)
+	h2 := o2.Obfuscator.ObfuscateHostname(hostname)
 	if h1 != h2 {
 		t.Errorf("Hostname obfuscation not deterministic: %s vs %s", h1, h2)
 	}
@@ -161,8 +166,8 @@ func TestObfuscator_DeterministicAcrossRuns(t *testing.T) {
 
 	// Test IPs
 	ip := "192.168.1.100"
-	ip1 := o1.obfuscateIP(ip)
-	ip2 := o2.obfuscateIP(ip)
+	ip1 := o1.Obfuscator.ObfuscateIP(ip)
+	ip2 := o2.Obfuscator.ObfuscateIP(ip)
 	if ip1 != ip2 {
 		t.Errorf("IP obfuscation not deterministic: %s vs %s", ip1, ip2)
 	}
@@ -170,8 +175,8 @@ func TestObfuscator_DeterministicAcrossRuns(t *testing.T) {
 
 	// Test replica sets
 	rs := "production-replica-set"
-	rs1 := o1.getObfuscatedReplSet(rs)
-	rs2 := o2.getObfuscatedReplSet(rs)
+	rs1 := o1.Obfuscator.ObfuscateReplSet(rs)
+	rs2 := o2.Obfuscator.ObfuscateReplSet(rs)
 	if rs1 != rs2 {
 		t.Errorf("ReplSet obfuscation not deterministic: %s vs %s", rs1, rs2)
 	}
@@ -179,8 +184,8 @@ func TestObfuscator_DeterministicAcrossRuns(t *testing.T) {
 
 	// Test host:port
 	hostPort := "mongodb-server.company.com:27017"
-	hp1 := o1.obfuscateHostPort(hostPort)
-	hp2 := o2.obfuscateHostPort(hostPort)
+	hp1 := o1.Obfuscator.ObfuscateHostPort(hostPort)
+	hp2 := o2.Obfuscator.ObfuscateHostPort(hostPort)
 	if hp1 != hp2 {
 		t.Errorf("HostPort obfuscation not deterministic: %s vs %s", hp1, hp2)
 	}
