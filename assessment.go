@@ -111,7 +111,7 @@ func (as *Assessment) GetAssessment(from time.Time, to time.Time) map[string]int
 	var headerList []map[string]string
 	var rowList [][]interface{}
 
-	if to.Sub(from) <= 24*time.Hour {
+	if to.Sub(from) <= 72*time.Hour {
 		for i := 0; i < as.blocks; i++ {
 			headerList = append(headerList, map[string]string{"text": "Metric", "type": "Number"})
 			headerList = append(headerList, map[string]string{"text": "Score", "type": "Number"})
@@ -195,7 +195,7 @@ func (as *Assessment) GetAssessment(from time.Time, to time.Time) map[string]int
 		}
 	} else {
 		headerList = append(headerList, map[string]string{"text": "Reason", "type": "string"})
-		rowList = append(rowList, []interface{}{"Assessment is available when date range is less than a day"})
+		rowList = append(rowList, []interface{}{"Assessment is available when date range is less than 3 days"})
 	}
 	return map[string]interface{}{"columns": headerList, "type": "table", "rows": rowList}
 }
