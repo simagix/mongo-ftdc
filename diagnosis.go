@@ -30,11 +30,60 @@ type DiagnosisResult struct {
 	DetectedAt time.Time
 }
 
+// ActivitySummary holds key metrics that are always displayed
+type ActivitySummary struct {
+	// Operations per second
+	OpsQuery   float64
+	OpsInsert  float64
+	OpsUpdate  float64
+	OpsDelete  float64
+	OpsCommand float64
+	OpsTotal   float64
+
+	// Latencies in ms (p95)
+	LatencyRead    float64
+	LatencyWrite   float64
+	LatencyCommand float64
+
+	// Scan activity
+	ScanKeys    float64
+	ScanObjects float64
+	DocsReturned float64
+
+	// Resource utilization (percentages)
+	CPUUser      float64
+	CPUSystem    float64
+	CPUIdle      float64
+	MemResident  float64 // percentage of total RAM
+	CacheUsed    float64 // percentage of WT cache
+	DiskUtil     float64 // max disk utilization
+
+	// Network
+	NetRequestsPerSec float64
+	NetInMBps         float64
+	NetOutMBps        float64
+
+	// Connections
+	ConnsActive  float64
+	ConnsCurrent float64
+}
+
 // TimeRange represents a time period when an issue occurred
 type TimeRange struct {
 	Start time.Time
 	End   time.Time
 	Peak  float64
+}
+
+// AnomalyEvent represents a detected anomaly with timestamp for timeline
+type AnomalyEvent struct {
+	Timestamp time.Time
+	EndTime   time.Time
+	Duration  time.Duration
+	Metric    string
+	Peak      float64
+	Threshold string
+	Severity  string // "critical", "warning", "info"
 }
 
 // Diagnosis analyzes FTDC data for problems
@@ -47,6 +96,8 @@ type Diagnosis struct {
 	diskMetrics map[string]map[string]metricStats // disk -> metric -> stats
 	replMetrics map[string]metricStats            // host -> lag stats
 	results     []DiagnosisResult
+	summary     ActivitySummary
+	anomalies   []AnomalyEvent
 }
 
 // NewDiagnosis creates a new diagnosis engine
@@ -61,6 +112,8 @@ func NewDiagnosis(stats FTDCStats, from, to time.Time) *Diagnosis {
 		replMetrics: make(map[string]metricStats),
 	}
 	d.computeMetrics()
+	d.computeActivitySummary()
+	d.collectAnomalies()
 	return d
 }
 
@@ -106,6 +159,205 @@ func (d *Diagnosis) computeMetrics() {
 		m := as.getTcmallocFragmentation(d.from, d.to)
 		d.metrics["tcmalloc_frag"] = m
 	}
+}
+
+// computeActivitySummary calculates the activity summary metrics
+func (d *Diagnosis) computeActivitySummary() {
+	// Operations (use median for typical activity)
+	d.summary.OpsQuery = d.getMetric("ops_query").median
+	d.summary.OpsInsert = d.getMetric("ops_insert").median
+	d.summary.OpsUpdate = d.getMetric("ops_update").median
+	d.summary.OpsDelete = d.getMetric("ops_delete").median
+	d.summary.OpsCommand = d.getMetric("ops_command").median
+	d.summary.OpsTotal = d.summary.OpsQuery + d.summary.OpsInsert + d.summary.OpsUpdate + d.summary.OpsDelete + d.summary.OpsCommand
+
+	// Latencies (use p95 for worst-case)
+	d.summary.LatencyRead = d.getMetric("latency_read").p95
+	d.summary.LatencyWrite = d.getMetric("latency_write").p95
+	d.summary.LatencyCommand = d.getMetric("latency_command").p95
+
+	// Scan activity (use p95 to catch spikes)
+	d.summary.ScanKeys = d.getMetric("scan_keys").p95
+	d.summary.ScanObjects = d.getMetric("scan_objects").p95
+	d.summary.DocsReturned = d.getMetric("doc_returned/s").median
+
+	// CPU (use median for typical, show user+system)
+	d.summary.CPUUser = d.getMetric("cpu_user").median
+	d.summary.CPUSystem = d.getMetric("cpu_system").median
+	d.summary.CPUIdle = d.getMetric("cpu_idle").median
+
+	// Memory - getMetric returns ALREADY as percentage (Assessment converts it)
+	// But only if MemSizeMB > 0, otherwise it returns raw GB
+	if d.stats.ServerInfo.HostInfo.System.MemSizeMB > 0 {
+		d.summary.MemResident = d.getMetric("mem_resident").median // already a percentage
+	} else {
+		d.summary.MemResident = -1 // N/A
+	}
+
+	// WiredTiger cache - getMetric returns ALREADY as percentage (Assessment converts it)
+	// But only if MaxWTCache > 0, otherwise it returns raw GB
+	if d.stats.MaxWTCache > 0 {
+		d.summary.CacheUsed = d.getMetric("wt_cache_used").median // already a percentage
+	} else {
+		d.summary.CacheUsed = -1 // N/A
+	}
+
+	// Disk utilization - find max across all disks
+	maxDiskUtil := 0.0
+	for _, diskMetrics := range d.diskMetrics {
+		if util, ok := diskMetrics["util"]; ok {
+			if util.p95 > maxDiskUtil {
+				maxDiskUtil = util.p95
+			}
+		}
+	}
+	d.summary.DiskUtil = maxDiskUtil
+
+	// Network
+	d.summary.NetRequestsPerSec = d.getMetric("net_requests").median
+	d.summary.NetInMBps = d.getMetric("net_in").median
+	d.summary.NetOutMBps = d.getMetric("net_out").median
+
+	// Connections
+	d.summary.ConnsActive = d.getMetric("conns_active").median
+	d.summary.ConnsCurrent = d.getMetric("conns_current").median
+}
+
+// AnomalyThreshold defines threshold for anomaly detection
+type AnomalyThreshold struct {
+	Metric    string
+	Threshold float64
+	Above     bool // true = anomaly when > threshold, false = anomaly when < threshold
+	Severity  string
+	Label     string
+}
+
+// collectAnomalies finds all anomaly events across metrics
+func (d *Diagnosis) collectAnomalies() {
+	thresholds := []AnomalyThreshold{
+		// Latency anomalies (above threshold is bad)
+		{"latency_read", 20, true, "warning", "> 20ms"},
+		{"latency_write", 20, true, "warning", "> 20ms"},
+		{"latency_command", 20, true, "warning", "> 20ms"},
+
+		// Scan anomalies (high scans indicate slow queries)
+		{"scan_keys", 100000, true, "warning", "> 100K/s"},
+		{"scan_objects", 100000, true, "warning", "> 100K/s"},
+
+		// CPU anomalies
+		{"cpu_idle", 30, false, "warning", "< 30%"},   // low idle = high CPU
+		{"cpu_iowait", 15, true, "warning", "> 15%"},  // high iowait = disk bottleneck
+
+		// Memory/Cache anomalies (handled specially for percentages)
+		{"mem_page_faults", 20, true, "warning", "> 20/s"},
+
+		// Queue anomalies
+		{"q_queued_read", 10, true, "warning", "> 10"},
+		{"q_queued_write", 10, true, "warning", "> 10"},
+
+		// Replication
+		{"write_conflicts/s", 10, true, "warning", "> 10/s"},
+	}
+
+	for _, t := range thresholds {
+		if data, ok := d.stats.TimeSeriesData[t.Metric]; ok {
+			var ranges []TimeRange
+			if t.Above {
+				ranges = d.findExceedances(data, t.Threshold)
+			} else {
+				ranges = d.findBelowThreshold(data, t.Threshold)
+			}
+
+			for _, r := range ranges {
+				if r.End.Sub(r.Start) >= 10*time.Second { // Only significant anomalies (>10s)
+					d.anomalies = append(d.anomalies, AnomalyEvent{
+						Timestamp: r.Start,
+						EndTime:   r.End,
+						Duration:  r.End.Sub(r.Start),
+						Metric:    t.Metric,
+						Peak:      r.Peak,
+						Threshold: t.Label,
+						Severity:  t.Severity,
+					})
+				}
+			}
+		}
+	}
+
+	// Disk utilization anomalies
+	for disk, stats := range d.stats.DiskStats {
+		ranges := d.findExceedances(stats.Utilization, 70) // > 70% disk util
+		for _, r := range ranges {
+			if r.End.Sub(r.Start) >= 10*time.Second {
+				d.anomalies = append(d.anomalies, AnomalyEvent{
+					Timestamp: r.Start,
+					EndTime:   r.End,
+					Duration:  r.End.Sub(r.Start),
+					Metric:    "disk_util_" + disk,
+					Peak:      r.Peak,
+					Threshold: "> 70%",
+					Severity:  "warning",
+				})
+			}
+		}
+	}
+
+	// Replication lag anomalies
+	for host, lagData := range d.stats.ReplicationLags {
+		ranges := d.findExceedances(lagData, 5) // > 5 seconds lag
+		for _, r := range ranges {
+			if r.End.Sub(r.Start) >= 10*time.Second {
+				d.anomalies = append(d.anomalies, AnomalyEvent{
+					Timestamp: r.Start,
+					EndTime:   r.End,
+					Duration:  r.End.Sub(r.Start),
+					Metric:    "repl_lag_" + host,
+					Peak:      r.Peak,
+					Threshold: "> 5s",
+					Severity:  "critical",
+				})
+			}
+		}
+	}
+
+	// Sort by timestamp
+	sort.Slice(d.anomalies, func(i, j int) bool {
+		return d.anomalies[i].Timestamp.Before(d.anomalies[j].Timestamp)
+	})
+}
+
+// findBelowThreshold finds time ranges when metric was below threshold
+func (d *Diagnosis) findBelowThreshold(data TimeSeriesDoc, threshold float64) []TimeRange {
+	ranges := []TimeRange{}
+	if len(data.DataPoints) == 0 {
+		return ranges
+	}
+
+	var currentRange *TimeRange
+	for _, dp := range data.DataPoints {
+		if len(dp) < 2 {
+			continue
+		}
+		value := dp[0]
+		ts := time.Unix(0, int64(dp[1])*int64(time.Millisecond))
+
+		if value < threshold {
+			if currentRange == nil {
+				currentRange = &TimeRange{Start: ts, Peak: value}
+			}
+			if value < currentRange.Peak { // For "below" threshold, lower is worse
+				currentRange.Peak = value
+			}
+			currentRange.End = ts
+		} else if currentRange != nil {
+			ranges = append(ranges, *currentRange)
+			currentRange = nil
+		}
+	}
+	if currentRange != nil {
+		ranges = append(ranges, *currentRange)
+	}
+	return ranges
 }
 
 // findExceedances finds time ranges when a metric exceeded a threshold
@@ -564,6 +816,59 @@ func (d *Diagnosis) PrintReport() {
 	fmt.Printf("📊 MongoDB: v%s\n", d.stats.ServerInfo.BuildInfo.Version)
 	fmt.Println()
 
+	// Activity Summary
+	fmt.Println("─────────────────────────────────────────────────────────────────────────────────")
+	fmt.Println("📊 ACTIVITY SUMMARY")
+	fmt.Println("─────────────────────────────────────────────────────────────────────────────────")
+	fmt.Println()
+	fmt.Printf("   ⚡ Operations/sec:  query=%.0f  insert=%.0f  update=%.0f  delete=%.0f  cmd=%.0f  (total=%.0f)\n",
+		d.summary.OpsQuery, d.summary.OpsInsert, d.summary.OpsUpdate, d.summary.OpsDelete, d.summary.OpsCommand, d.summary.OpsTotal)
+	fmt.Printf("   ⏱  Latency p95 (ms): read=%.1f  write=%.1f  command=%.1f\n",
+		d.summary.LatencyRead, d.summary.LatencyWrite, d.summary.LatencyCommand)
+	fmt.Printf("   🔍 Scans p95/s:      keys=%.0f  objects=%.0f  docs_returned=%.0f\n",
+		d.summary.ScanKeys, d.summary.ScanObjects, d.summary.DocsReturned)
+	// Format resource percentages, showing N/A for invalid values
+	ramStr := "N/A"
+	if d.summary.MemResident >= 0 {
+		ramStr = fmt.Sprintf("%.0f%%", d.summary.MemResident)
+	}
+	cacheStr := "N/A"
+	if d.summary.CacheUsed >= 0 {
+		cacheStr = fmt.Sprintf("%.0f%%", d.summary.CacheUsed)
+	}
+	fmt.Printf("   💻 Resources:        CPU=%.0f%%  RAM=%s  Cache=%s  Disk=%.0f%%\n",
+		d.summary.CPUUser+d.summary.CPUSystem, ramStr, cacheStr, d.summary.DiskUtil)
+	fmt.Printf("   🌐 Network:          requests=%.0f/s  in=%.1f MB/s  out=%.1f MB/s\n",
+		d.summary.NetRequestsPerSec, d.summary.NetInMBps, d.summary.NetOutMBps)
+	fmt.Printf("   🔗 Connections:      active=%.0f  current=%.0f\n",
+		d.summary.ConnsActive, d.summary.ConnsCurrent)
+	fmt.Println()
+
+	// Anomaly Timeline (top 10 events)
+	if len(d.anomalies) > 0 {
+		fmt.Println("─────────────────────────────────────────────────────────────────────────────────")
+		fmt.Println("📅 ANOMALY TIMELINE (for slow query log correlation)")
+		fmt.Println("─────────────────────────────────────────────────────────────────────────────────")
+		fmt.Println()
+		maxEvents := 10
+		if len(d.anomalies) < maxEvents {
+			maxEvents = len(d.anomalies)
+		}
+		for i := 0; i < maxEvents; i++ {
+			a := d.anomalies[i]
+			peakStr := d.formatPeakValue(a.Peak, a.Metric)
+			fmt.Printf("   %s  %-20s  peak=%-10s  duration=%s\n",
+				a.Timestamp.Format("Jan 02 15:04:05"),
+				a.Metric,
+				peakStr,
+				a.Duration.Round(time.Second))
+		}
+		if len(d.anomalies) > 10 {
+			fmt.Printf("   ... and %d more events (see HTML report for full timeline)\n", len(d.anomalies)-10)
+		}
+		fmt.Println()
+	}
+
 	if len(d.results) == 0 {
 		fmt.Println("✅ No significant issues detected!")
 		fmt.Println()
@@ -660,9 +965,79 @@ func (d *Diagnosis) GenerateHTML(filename string) error {
         .summary h2 { font-size: 1rem; margin-bottom: 1rem; }
         .no-issues {
             text-align: center;
-            padding: 3rem;
+            padding: 2rem;
             color: var(--accent-green);
-            font-size: 1.2rem;
+            font-size: 1.1rem;
+        }
+        .activity-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        .activity-card {
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 1rem;
+            border: 1px solid var(--border-color);
+        }
+        .activity-card h4 {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            margin-bottom: 0.75rem;
+            letter-spacing: 0.5px;
+        }
+        .activity-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.25rem 0;
+            font-size: 0.85rem;
+        }
+        .activity-label { color: var(--text-secondary); }
+        .activity-value { font-weight: 500; }
+        .activity-value.highlight { color: var(--accent-blue); }
+        .activity-value.warn { color: var(--accent-yellow); }
+        .activity-value.good { color: var(--accent-green); }
+        .timeline-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+            font-size: 0.85rem;
+        }
+        .timeline-table th {
+            text-align: left;
+            padding: 0.75rem;
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 0.7rem;
+            letter-spacing: 0.5px;
+        }
+        .timeline-table td {
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .timeline-table tr:hover {
+            background: var(--bg-tertiary);
+        }
+        .timeline-severity {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+        }
+        .timeline-severity.critical { background: var(--accent-red); }
+        .timeline-severity.warning { background: var(--accent-yellow); }
+        .timeline-severity.info { background: var(--accent-blue); }
+        .timeline-metric { font-family: monospace; }
+        .timeline-peak { color: var(--accent-yellow); font-weight: 500; }
+        .no-anomalies {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-secondary);
         }
         .issue {
             background: var(--bg-secondary);
@@ -751,7 +1126,115 @@ func (d *Diagnosis) GenerateHTML(filename string) error {
         </header>
 
         <div class="summary">
-            <h2>📊 Summary</h2>
+            <h2>📊 Activity Summary</h2>
+            <div class="activity-grid">
+                <div class="activity-card">
+                    <h4>⚡ Operations/sec (median)</h4>
+                    <div class="activity-row">
+                        <span class="activity-label">Query</span>
+                        <span class="activity-value">{{printf "%.0f" .Summary.OpsQuery}}</span>
+                    </div>
+                    <div class="activity-row">
+                        <span class="activity-label">Insert</span>
+                        <span class="activity-value">{{printf "%.0f" .Summary.OpsInsert}}</span>
+                    </div>
+                    <div class="activity-row">
+                        <span class="activity-label">Update</span>
+                        <span class="activity-value">{{printf "%.0f" .Summary.OpsUpdate}}</span>
+                    </div>
+                    <div class="activity-row">
+                        <span class="activity-label">Delete</span>
+                        <span class="activity-value">{{printf "%.0f" .Summary.OpsDelete}}</span>
+                    </div>
+                    <div class="activity-row">
+                        <span class="activity-label">Command</span>
+                        <span class="activity-value">{{printf "%.0f" .Summary.OpsCommand}}</span>
+                    </div>
+                    <div class="activity-row" style="border-top: 1px solid var(--border-color); margin-top: 0.5rem; padding-top: 0.5rem;">
+                        <span class="activity-label"><strong>Total</strong></span>
+                        <span class="activity-value highlight"><strong>{{printf "%.0f" .Summary.OpsTotal}}</strong></span>
+                    </div>
+                </div>
+                <div class="activity-card">
+                    <h4>⏱ Latency p95 (ms)</h4>
+                    <div class="activity-row">
+                        <span class="activity-label">Read</span>
+                        <span class="activity-value {{if gt .Summary.LatencyRead 20.0}}warn{{else}}good{{end}}">{{printf "%.1f" .Summary.LatencyRead}}</span>
+                    </div>
+                    <div class="activity-row">
+                        <span class="activity-label">Write</span>
+                        <span class="activity-value {{if gt .Summary.LatencyWrite 20.0}}warn{{else}}good{{end}}">{{printf "%.1f" .Summary.LatencyWrite}}</span>
+                    </div>
+                    <div class="activity-row">
+                        <span class="activity-label">Command</span>
+                        <span class="activity-value {{if gt .Summary.LatencyCommand 20.0}}warn{{else}}good{{end}}">{{printf "%.1f" .Summary.LatencyCommand}}</span>
+                    </div>
+                </div>
+                <div class="activity-card">
+                    <h4>🔍 Query Efficiency (p95)</h4>
+                    <div class="activity-row">
+                        <span class="activity-label">Keys Scanned/s</span>
+                        <span class="activity-value {{if gt .Summary.ScanKeys 100000.0}}warn{{end}}">{{printf "%.0f" .Summary.ScanKeys}}</span>
+                    </div>
+                    <div class="activity-row">
+                        <span class="activity-label">Objects Scanned/s</span>
+                        <span class="activity-value {{if gt .Summary.ScanObjects 100000.0}}warn{{end}}">{{printf "%.0f" .Summary.ScanObjects}}</span>
+                    </div>
+                    <div class="activity-row">
+                        <span class="activity-label">Docs Returned/s</span>
+                        <span class="activity-value">{{printf "%.0f" .Summary.DocsReturned}}</span>
+                    </div>
+                </div>
+                <div class="activity-card">
+                    <h4>💻 Resources</h4>
+                    <div class="activity-row">
+                        <span class="activity-label">CPU (user+sys)</span>
+                        <span class="activity-value {{if gt (addFloat .Summary.CPUUser .Summary.CPUSystem) 70.0}}warn{{else}}good{{end}}">{{printf "%.0f" (addFloat .Summary.CPUUser .Summary.CPUSystem)}}%</span>
+                    </div>
+                    <div class="activity-row">
+                        <span class="activity-label">Memory</span>
+                        {{if lt .Summary.MemResident 0.0}}<span class="activity-value">N/A</span>{{else}}<span class="activity-value {{if gt .Summary.MemResident 80.0}}warn{{else}}good{{end}}">{{printf "%.0f" .Summary.MemResident}}%</span>{{end}}
+                    </div>
+                    <div class="activity-row">
+                        <span class="activity-label">WT Cache</span>
+                        {{if lt .Summary.CacheUsed 0.0}}<span class="activity-value">N/A</span>{{else}}<span class="activity-value {{if gt .Summary.CacheUsed 80.0}}warn{{else}}good{{end}}">{{printf "%.0f" .Summary.CacheUsed}}%</span>{{end}}
+                    </div>
+                    <div class="activity-row">
+                        <span class="activity-label">Disk (max)</span>
+                        <span class="activity-value {{if gt .Summary.DiskUtil 70.0}}warn{{else}}good{{end}}">{{printf "%.0f" .Summary.DiskUtil}}%</span>
+                    </div>
+                </div>
+                <div class="activity-card">
+                    <h4>🌐 Network</h4>
+                    <div class="activity-row">
+                        <span class="activity-label">Requests/s</span>
+                        <span class="activity-value">{{printf "%.0f" .Summary.NetRequestsPerSec}}</span>
+                    </div>
+                    <div class="activity-row">
+                        <span class="activity-label">In</span>
+                        <span class="activity-value">{{printf "%.1f" .Summary.NetInMBps}} MB/s</span>
+                    </div>
+                    <div class="activity-row">
+                        <span class="activity-label">Out</span>
+                        <span class="activity-value">{{printf "%.1f" .Summary.NetOutMBps}} MB/s</span>
+                    </div>
+                </div>
+                <div class="activity-card">
+                    <h4>🔗 Connections</h4>
+                    <div class="activity-row">
+                        <span class="activity-label">Active</span>
+                        <span class="activity-value">{{printf "%.0f" .Summary.ConnsActive}}</span>
+                    </div>
+                    <div class="activity-row">
+                        <span class="activity-label">Current</span>
+                        <span class="activity-value">{{printf "%.0f" .Summary.ConnsCurrent}}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="summary">
+            <h2>🩺 Diagnosis</h2>
             {{if eq (len .Results) 0}}
             <div class="no-issues">✅ No significant issues detected!</div>
             {{else}}
@@ -782,6 +1265,40 @@ func (d *Diagnosis) GenerateHTML(filename string) error {
         </div>
         {{end}}
 
+        {{if gt (len .Anomalies) 0}}
+        <div class="summary">
+            <h2>📅 Anomaly Timeline</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 1rem;">
+                Use these timestamps to correlate with slow query logs and application metrics.
+            </p>
+            <table class="timeline-table">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Duration</th>
+                        <th>Metric</th>
+                        <th>Peak</th>
+                        <th>Threshold</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Anomalies}}
+                    <tr>
+                        <td>
+                            <span class="timeline-severity {{.Severity}}"></span>
+                            {{.Timestamp.Format "Jan 02 15:04:05"}}
+                        </td>
+                        <td>{{formatDuration .Duration}}</td>
+                        <td class="timeline-metric">{{.Metric}}</td>
+                        <td class="timeline-peak">{{formatPeak .Peak .Metric}}</td>
+                        <td>{{.Threshold}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{end}}
+
         <footer>
             Generated by <a href="https://github.com/simagix/mongo-ftdc">mongo-ftdc</a> • {{.GeneratedAt}}
         </footer>
@@ -796,6 +1313,8 @@ func (d *Diagnosis) GenerateHTML(filename string) error {
 		Hostname     string
 		MongoVersion string
 		Results      []DiagnosisResult
+		Summary      ActivitySummary
+		Anomalies    []AnomalyEvent
 		GeneratedAt  string
 	}{
 		FromTime:     d.from.Format("2006-01-02 15:04:05"),
@@ -804,10 +1323,38 @@ func (d *Diagnosis) GenerateHTML(filename string) error {
 		Hostname:     d.stats.ServerInfo.HostInfo.System.Hostname,
 		MongoVersion: d.stats.ServerInfo.BuildInfo.Version,
 		Results:      d.results,
+		Summary:      d.summary,
+		Anomalies:    d.anomalies,
 		GeneratedAt:  time.Now().Format("2006-01-02 15:04:05 MST"),
 	}
 
-	t, err := template.New("report").Parse(tmpl)
+	funcMap := template.FuncMap{
+		"addFloat": func(a, b float64) float64 { return a + b },
+		"formatDuration": func(d time.Duration) string {
+			if d < time.Minute {
+				return fmt.Sprintf("%.0fs", d.Seconds())
+			} else if d < time.Hour {
+				return fmt.Sprintf("%.0fm %.0fs", d.Minutes(), d.Seconds()-float64(int(d.Minutes()))*60)
+			}
+			return fmt.Sprintf("%.0fh %.0fm", d.Hours(), d.Minutes()-float64(int(d.Hours()))*60)
+		},
+		"formatPeak": func(peak float64, metric string) string {
+			if strings.Contains(metric, "latency") {
+				return fmt.Sprintf("%.1fms", peak)
+			} else if strings.Contains(metric, "cpu") || strings.Contains(metric, "disk_util") {
+				return fmt.Sprintf("%.0f%%", peak)
+			} else if strings.Contains(metric, "repl_lag") {
+				return fmt.Sprintf("%.1fs", peak)
+			} else if peak >= 1000000 {
+				return fmt.Sprintf("%.1fM", peak/1000000)
+			} else if peak >= 1000 {
+				return fmt.Sprintf("%.1fK", peak/1000)
+			}
+			return fmt.Sprintf("%.0f", peak)
+		},
+	}
+
+	t, err := template.New("report").Funcs(funcMap).Parse(tmpl)
 	if err != nil {
 		return err
 	}
@@ -824,5 +1371,21 @@ func (d *Diagnosis) GenerateHTML(filename string) error {
 // GetResults returns the diagnosis results
 func (d *Diagnosis) GetResults() []DiagnosisResult {
 	return d.results
+}
+
+// formatPeakValue formats peak value based on metric type
+func (d *Diagnosis) formatPeakValue(peak float64, metric string) string {
+	if strings.Contains(metric, "latency") {
+		return fmt.Sprintf("%.1fms", peak)
+	} else if strings.Contains(metric, "cpu") || strings.Contains(metric, "disk_util") {
+		return fmt.Sprintf("%.0f%%", peak)
+	} else if strings.Contains(metric, "repl_lag") {
+		return fmt.Sprintf("%.1fs", peak)
+	} else if peak >= 1000000 {
+		return fmt.Sprintf("%.1fM", peak/1000000)
+	} else if peak >= 1000 {
+		return fmt.Sprintf("%.1fK", peak/1000)
+	}
+	return fmt.Sprintf("%.0f", peak)
 }
 

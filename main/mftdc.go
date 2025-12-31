@@ -210,20 +210,21 @@ func runDiagnosis(metrics *ftdc.Metrics, args []string) {
 }
 
 func determineHTMLPath(inputPath string) string {
+	// Always output to ./html directory
+	htmlDir := "html"
+	os.MkdirAll(htmlDir, 0755)
+
 	info, err := os.Stat(inputPath)
 	if err != nil {
-		// Default to current directory if can't stat
-		return "ftdc_diagnosis.html"
+		return filepath.Join(htmlDir, "ftdc_diagnosis.html")
 	}
 
 	if info.IsDir() {
-		// Input is a directory - save HTML in that directory
-		return filepath.Join(inputPath, "ftdc_diagnosis.html")
+		return filepath.Join(htmlDir, "ftdc_diagnosis.html")
 	}
 
 	// Input is a file - replace "metrics." with "ftdc-diag." and add .html
 	// Example: metrics.2025-12-10T11-40-06Z-00000 -> ftdc-diag.2025-12-10T11-40-06Z.html
-	dir := filepath.Dir(inputPath)
 	name := filepath.Base(inputPath)
 
 	if len(name) > 8 && name[:8] == "metrics." {
@@ -233,9 +234,8 @@ func determineHTMLPath(inputPath string) string {
 		if idx := len(suffix) - 6; idx > 0 && suffix[idx] == '-' {
 			suffix = suffix[:idx] // e.g., "2025-12-10T11-40-06Z"
 		}
-		return filepath.Join(dir, "ftdc-diag."+suffix+".html")
+		return filepath.Join(htmlDir, "ftdc-diag."+suffix+".html")
 	}
 
-	// Fallback for other file types
-	return filepath.Join(dir, "ftdc_diagnosis.html")
+	return filepath.Join(htmlDir, "ftdc_diagnosis.html")
 }
