@@ -1,20 +1,26 @@
+# Copyright 2019-present Kuei-chun Chen. All rights reserved.
 FROM golang:1.25-alpine AS builder
-WORKDIR /build
-# Copy dependency files first (better layer caching)
-COPY go.mod go.sum ./
-COPY vendor/ vendor/
-# Copy source files
-COPY *.go ./
-COPY decoder/ decoder/
-COPY main/ main/
-COPY version ./
-# Build the binary
-RUN CGO_ENABLED=0 go build -ldflags "-X main.version=v$(cat version)" -o mftdc main/mftdc.go
 
-FROM alpine
+# Install dependencies first (cached layer)
+RUN apk update && apk add git bash && rm -rf /var/cache/apk/*
+
+WORKDIR /github.com/simagix/mongo-ftdc
+
+# Copy go.mod and go.sum first for dependency caching
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy the rest of the source code
+COPY . .
+
+# Build binary (OS and arch auto-detected by buildx platform)
+RUN ./build.sh binary
+
+FROM alpine:3.19
 LABEL maintainer="Ken Chen <ken.chen@simagix.com>"
 RUN addgroup -S simagix && adduser -S simagix -G simagix
 USER simagix
 WORKDIR /home/simagix
-COPY --from=builder /build/mftdc /mftdc
+COPY --from=builder /github.com/simagix/mongo-ftdc/mftdc /mftdc
+
 CMD ["/mftdc", "--latest", "3", "/diagnostic.data/"]
