@@ -9,14 +9,15 @@ GIT_DATE=$(git log -1 --date=format:"%Y%m%d" --format="%ad" 2>/dev/null || date 
 VERSION="v$(cat version)-${GIT_DATE}"
 LDFLAGS="-X main.version=$VERSION -X main.repo=$EXEC"
 TAG="simagix/ftdc"
+GRAFANA_TAG="simagix/grafana-ftdc"
 
 print_usage() {
   echo "Usage: $0 [command]"
   echo ""
   echo "Commands:"
   echo "  (none)        Build binary for current platform to dist/"
-  echo "  docker        Build Docker image for current platform (local)"
-  echo "  push          Build and push multi-arch Docker image (amd64 + arm64)"
+  echo "  docker        Build Docker images for current platform (local)"
+  echo "  push          Build and push multi-arch Docker images (amd64 + arm64)"
   echo "  binaries      Build binaries for all platforms (linux/mac/win, amd64/arm64)"
   echo ""
   echo "Internal (used by Dockerfile):"
@@ -37,6 +38,12 @@ case "$1" in
       -t ${TAG}:${BR} \
       -t ${TAG}:latest . || die "docker build failed"
     echo "Built ${TAG}:${BR} for $(uname -m)"
+    
+    docker build \
+      -t ${GRAFANA_TAG}:${BR} \
+      -t ${GRAFANA_TAG}:latest \
+      -f grafana/Dockerfile . || die "grafana docker build failed"
+    echo "Built ${GRAFANA_TAG}:${BR} for $(uname -m)"
     ;;
 
   push)
@@ -52,6 +59,14 @@ case "$1" in
       -t ${TAG}:latest \
       --push . || die "docker build failed"
     echo "Pushed ${TAG}:${BR} (amd64 + arm64)"
+    
+    docker buildx build --builder multibuilder --platform linux/amd64,linux/arm64 \
+      --provenance=false --sbom=false \
+      -t ${GRAFANA_TAG}:${BR} \
+      -t ${GRAFANA_TAG}:latest \
+      -f grafana/Dockerfile \
+      --push . || die "grafana docker build failed"
+    echo "Pushed ${GRAFANA_TAG}:${BR} (amd64 + arm64)"
     ;;
 
   binary)
