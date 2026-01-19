@@ -37,7 +37,7 @@ var FormulaMap = map[string]ScoreFormula{
 	"queued_read":           {label: "queued_read", formula: "p95 of queued_read", low: 1, high: 5},
 	"queued_write":          {label: "queued_write", formula: "p95 of queued_write", low: 1, high: 5},
 	"scan_keys":             {label: "scan_keys", formula: "scan_keys", low: 0, high: (1024 * 1024)},
-	"scan_objects":          {label: "scan_objects", formula: "max of [](scan_objects/scan_keys)", low: 2, high: 5},
+	"scan_objects":          {label: "scan_objects", formula: "avg of [](scan_objects/scan_keys)", low: 2, high: 5},
 	"scan_sort":             {label: "scan_sort", formula: "scan_sort", low: 0, high: 1000},
 	"wt_cache_used":         {label: "wt_cache_used %%", formula: "(p95 of wt_cache_used)/wt_cache_max", low: 80, high: 95},
 	"wt_cache_dirty":        {label: "wt_cache_dirty %%", formula: "(p95 of wt_cache_dirty)/wt_cache_max", low: 5, high: 20},
@@ -65,8 +65,8 @@ var FormulaMap = map[string]ScoreFormula{
 	"tcmalloc_fragmentation": {label: "tcmalloc_frag %%", formula: "(heap-in_use)/heap", low: 20, high: 50},
 
 	// Flow Control - lagged members and time acquiring tickets
-	"flowctl_lagged_count":  {label: "flowctl_lagged_count", formula: "p95 of flowctl_lagged_count", low: 1, high: 3},
-	"flowctl_acquiring_us":  {label: "flowctl_acquiring (ms)", formula: "p95 of flowctl_acquiring_us/1000", low: 100, high: 1000},
+	"flowctl_lagged_count": {label: "flowctl_lagged_count", formula: "p95 of flowctl_lagged_count", low: 1, high: 3},
+	"flowctl_acquiring_us": {label: "flowctl_acquiring (ms)", formula: "p95 of flowctl_acquiring_us/1000", low: 100, high: 1000},
 }
 
 // Assessment stores timeserie data
@@ -368,14 +368,20 @@ func (as *Assessment) getScore(metric string, p5 float64, median float64, p95 fl
 		}
 		keys := as.stats.TimeSeriesData["scan_keys"]
 		objs := as.stats.TimeSeriesData["scan_objects"]
-		max := 0.0
+		// Calculate average ratio of scan_objects/scan_keys
+		sum := 0.0
+		count := 0
 		for i := range keys.DataPoints {
-			scale := objs.DataPoints[i][0] / keys.DataPoints[i][0]
-			if scale > max {
-				max = scale
+			if keys.DataPoints[i][0] > 0 { // avoid division by zero
+				sum += objs.DataPoints[i][0] / keys.DataPoints[i][0]
+				count++
 			}
 		}
-		score = GetScoreByRange(max, lwm, hwm)
+		avg := 0.0
+		if count > 0 {
+			avg = sum / float64(count)
+		}
+		score = GetScoreByRange(avg, lwm, hwm)
 	} else if metric == "scan_sort" { // 1 k sorted in mem
 		score = GetScoreByRange(p95, lwm, hwm)
 	} else if metric == "wt_dhandles_active" {

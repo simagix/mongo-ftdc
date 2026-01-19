@@ -46,17 +46,17 @@ type ActivitySummary struct {
 	LatencyCommand float64
 
 	// Scan activity
-	ScanKeys    float64
-	ScanObjects float64
+	ScanKeys     float64
+	ScanObjects  float64
 	DocsReturned float64
 
 	// Resource utilization (percentages)
-	CPUUser      float64
-	CPUSystem    float64
-	CPUIdle      float64
-	MemResident  float64 // percentage of total RAM
-	CacheUsed    float64 // percentage of WT cache
-	DiskUtil     float64 // max disk utilization
+	CPUUser     float64
+	CPUSystem   float64
+	CPUIdle     float64
+	MemResident float64 // percentage of total RAM
+	CacheUsed   float64 // percentage of WT cache
+	DiskUtil    float64 // max disk utilization
 
 	// Network
 	NetRequestsPerSec float64
@@ -245,8 +245,8 @@ func (d *Diagnosis) collectAnomalies() {
 		{"scan_objects", 100000, true, "warning", "> 100K/s"},
 
 		// CPU anomalies
-		{"cpu_idle", 30, false, "warning", "< 30%"},   // low idle = high CPU
-		{"cpu_iowait", 15, true, "warning", "> 15%"},  // high iowait = disk bottleneck
+		{"cpu_idle", 30, false, "warning", "< 30%"},  // low idle = high CPU
+		{"cpu_iowait", 15, true, "warning", "> 15%"}, // high iowait = disk bottleneck
 
 		// Memory/Cache anomalies (handled specially for percentages)
 		{"mem_page_faults", 20, true, "warning", "> 20/s"},
@@ -628,7 +628,7 @@ var DiagnosisRules = []DiagnosisRule{
 				symptoms = append(symptoms, fmt.Sprintf("Keys scanned: p95=%.0f/s (score: %d)", m.p95, m.score))
 			}
 			if m := d.getMetric("scan_objects"); m.score < 50 {
-				symptoms = append(symptoms, fmt.Sprintf("Objects scanned per key: max=%.0f:1 (score: %d)", m.p95, m.score))
+				symptoms = append(symptoms, fmt.Sprintf("Objects scanned per key: avg=%.0f:1 (score: %d)", m.p95, m.score))
 			}
 			return symptoms
 		},
@@ -1388,4 +1388,3 @@ func (d *Diagnosis) formatPeakValue(peak float64, metric string) string {
 	}
 	return fmt.Sprintf("%.0f", peak)
 }
-

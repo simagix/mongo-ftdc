@@ -377,8 +377,9 @@ func (m *Metrics) AddFTDCDetailStats(diag *DiagnosticData) {
 }
 
 // FilterTimeSeriesData returns partial data points if there are too many
+// Uses bucket aggregation with avg to downsample while preserving data integrity
 func FilterTimeSeriesData(tsData TimeSeriesDoc, from time.Time, to time.Time) TimeSeriesDoc {
-	seconds := 1800.0 // .5 hour, no gain to have a higher number.  Grafana aggregates
+	maxPoints := 1800 // max data points to return to Grafana
 	if len(tsData.DataPoints) == 0 {
 		return tsData
 	}
@@ -390,12 +391,31 @@ func FilterTimeSeriesData(tsData TimeSeriesDoc, from time.Time, to time.Time) Ti
 		return data
 	}
 
-	if len(points) > int(seconds) {
-		length := float64(len(points) + 1)
-		samples := [][]float64{}
-		for i := 0.0; i < seconds; i++ { // for fast sampling
-			p := int(length * i / seconds)
-			samples = append(samples, points[p])
+	if len(points) > maxPoints {
+		// Bucket aggregation using avg
+		bucketSize := len(points) / maxPoints
+		if bucketSize < 1 {
+			bucketSize = 1
+		}
+		samples := make([][]float64, 0, maxPoints)
+		for i := 0; i < len(points); i += bucketSize {
+			end := i + bucketSize
+			if end > len(points) {
+				end = len(points)
+			}
+			bucket := points[i:end]
+			if len(bucket) == 0 {
+				continue
+			}
+			// Calculate average value for this bucket
+			sum := 0.0
+			for _, dp := range bucket {
+				sum += dp[0]
+			}
+			avg := sum / float64(len(bucket))
+			// Use the last timestamp in the bucket
+			timestamp := bucket[len(bucket)-1][1]
+			samples = append(samples, []float64{avg, timestamp})
 		}
 		data.DataPoints = samples
 	} else {
